@@ -495,6 +495,15 @@ func (t *TableData) Same(t2 *TableData) bool {
 	return t.rowEvents.Same(t2.rowEvents)
 }
 
+// HasChanges returns true if any row has a kind other than EventUnchanged.
+// Time columns (AGE) are excluded from delta computation, so a purely
+// age-driven cycle returns false here.
+func (t *TableData) HasChanges() bool {
+	t.mx.RLock()
+	defer t.mx.RUnlock()
+	return t.rowEvents.HasChanges()
+}
+
 // Diff checks if two tables are equal.
 func (t *TableData) Diff(t2 *TableData) bool {
 	if t2 == nil || t.namespace != t2.namespace || t.header.Diff(t2.header) {
