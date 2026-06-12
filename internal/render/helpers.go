@@ -303,6 +303,8 @@ func strPtrToStr(s *string) string {
 	return *s
 }
 
+var padSpaces = strings.Repeat(" ", 256)
+
 // Pad a string up to the given length or truncates if greater than length.
 func Pad(s string, width int) string {
 	if len(s) == width {
@@ -311,6 +313,10 @@ func Pad(s string, width int) string {
 
 	if len(s) > width {
 		return Truncate(s, width)
+	}
+
+	if n := width - len(s); n <= len(padSpaces) {
+		return s + padSpaces[:n]
 	}
 
 	return s + strings.Repeat(" ", width-len(s))

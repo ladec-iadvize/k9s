@@ -6,13 +6,13 @@ package model
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
+	"github.com/derailed/k9s/internal/model1"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/sahilm/fuzzy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,7 +65,7 @@ func NewExpBackOff(ctx context.Context, start, maxVal time.Duration) backoff.Bac
 }
 
 func rxFilter(q string, lines []string) fuzzy.Matches {
-	rx, err := regexp.Compile(`(?i)` + q)
+	rx, err := model1.CompileFilterRx(`(?i)` + q)
 	if err != nil {
 		return nil
 	}

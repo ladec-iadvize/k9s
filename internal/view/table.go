@@ -78,8 +78,15 @@ func (t *Table) HeaderIndex(colName string) (int, bool) {
 			continue
 		}
 		s := h.Text
-		if idx := strings.Index(s, "["); idx > 0 {
-			s = s[:idx]
+		// Header cells are formatted as "[color::]NAME[::]" by columnIndicator,
+		// with an optional "[color::b]<arrow>[::]" sort indicator suffix.
+		if strings.HasPrefix(s, "[") {
+			if end := strings.Index(s, "]"); end >= 0 {
+				s = s[end+1:]
+			}
+		}
+		if end := strings.Index(s, "["); end >= 0 {
+			s = s[:end]
 		}
 		if s == colName {
 			return i, true

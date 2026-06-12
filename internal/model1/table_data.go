@@ -4,11 +4,11 @@
 package model1
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -171,22 +171,26 @@ func (t *TableData) rxFilter(q string, inverse bool) (*RowEvents, error) {
 	if inverse {
 		q = q[1:]
 	}
-	rx, err := regexp.Compile(`(?i)(` + q + `)`)
+	rx, err := CompileFilterRx(`(?i)(` + q + `)`)
 	if err != nil {
 		return nil, fmt.Errorf("invalid rx filter %q: %w", q, err)
 	}
 
 	vidx := t.header.FilterColIndices(t.namespace, true)
 	rr := NewRowEvents(t.RowCount() / 2)
+	var buf bytes.Buffer
 	t.rowEvents.Range(func(_ int, re RowEvent) bool {
-		ff := make([]string, 0, len(re.Row.Fields))
+		buf.Reset()
 		for idx, r := range re.Row.Fields {
 			if !vidx.Has(idx) {
 				continue
 			}
-			ff = append(ff, r)
+			if buf.Len() > 0 {
+				buf.WriteString(spacer)
+			}
+			buf.WriteString(r)
 		}
-		match := rx.MatchString(strings.Join(ff, spacer))
+		match := rx.Match(buf.Bytes())
 		if (inverse && !match) || (!inverse && match) {
 			rr.Add(re)
 		}
@@ -471,14 +475,24 @@ func (t *TableData) Delete(newKeys sets.Set[string]) {
 		return true
 	})
 
-	for _, id := range victims.UnsortedList() {
-		if err := t.rowEvents.Delete(id); err != nil {
-			slog.Error("Table delete failed",
-				slogs.Error, err,
-				slogs.Message, id,
-			)
-		}
+	t.rowEvents.DeleteAll(victims)
+}
+
+// Same reports whether the table holds exactly the same content as t2,
+// including the AGE column. Comparison is order-insensitive since rendering
+// sorts rows deterministically.
+func (t *TableData) Same(t2 *TableData) bool {
+	if t == nil || t2 == nil {
+		return t == t2
 	}
+	t.mx.RLock()
+	defer t.mx.RUnlock()
+
+	if t.namespace != t2.namespace || t.header.Diff(t2.header) {
+		return false
+	}
+
+	return t.rowEvents.Same(t2.rowEvents)
 }
 
 // HasChanges returns true if any row has a kind other than EventUnchanged.

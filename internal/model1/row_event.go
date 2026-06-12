@@ -6,7 +6,11 @@ package model1
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
+
+	"github.com/fvbommel/sortorder"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type ReRangeFn func(int, RowEvent) bool
@@ -201,6 +205,23 @@ func (r *RowEvents) Upsert(re RowEvent) {
 	}
 }
 
+// DeleteAll removes all rows whose id is in victims, reindexing once.
+func (r *RowEvents) DeleteAll(victims sets.Set[string]) {
+	if victims.Len() == 0 {
+		return
+	}
+	out := r.events[:0]
+	for _, e := range r.events {
+		if victims.Has(e.Row.ID) {
+			delete(r.index, e.Row.ID)
+			continue
+		}
+		out = append(out, e)
+	}
+	r.events = out
+	r.reindex()
+}
+
 // Delete removes an element by id.
 func (r *RowEvents) Delete(fqn string) error {
 	victim, ok := r.FindIndex(fqn)
@@ -254,6 +275,25 @@ func (r *RowEvents) FindIndex(id string) (int, bool) {
 	return i, ok
 }
 
+// Same reports whether both collections hold exactly the same events,
+// regardless of ordering.
+func (r *RowEvents) Same(re *RowEvents) bool {
+	if len(r.events) != len(re.events) {
+		return false
+	}
+	for i := range re.events {
+		e := &re.events[i]
+		o, ok := r.Get(e.Row.ID)
+		if !ok || o.Kind != e.Kind ||
+			!slices.Equal(o.Row.Fields, e.Row.Fields) ||
+			!slices.Equal(o.Deltas, e.Deltas) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // HasChanges returns true if any row event has a kind other than EventUnchanged.
 // Used to skip unnecessary UI refreshes when the informer cache is idle.
 func (r *RowEvents) HasChanges() bool {
@@ -266,21 +306,45 @@ func (r *RowEvents) HasChanges() bool {
 }
 
 // Sort rows based on column index and order.
-func (r *RowEvents) Sort(ns string, sortCol int, isDuration, numCol, isCapacity, asc bool) {
-	if sortCol == -1 || r == nil {
+// Sort keys are computed once per row: parsing durations/quantities in the
+// comparator would cost O(n log n) parses on every refresh.
+func (r *RowEvents) Sort(_ string, sortCol int, isDuration, numCol, isCapacity, asc bool) {
+	if r == nil || sortCol == -1 {
 		return
 	}
 
-	t := RowEventSorter{
-		NS:         ns,
-		Events:     r,
-		Index:      sortCol,
-		Asc:        asc,
-		IsNumber:   numCol,
-		IsDuration: isDuration,
-		IsCapacity: isCapacity,
+	ee := r.events
+	keys := make([]sortKey, len(ee))
+	for i := range ee {
+		var v string
+		if sortCol < len(ee[i].Row.Fields) {
+			v = ee[i].Row.Fields[sortCol]
+		}
+		keys[i] = makeSortKey(v, isDuration, numCol, isCapacity)
 	}
-	sort.Sort(t)
+
+	idx := make([]int, len(ee))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(a, b int) bool {
+		i, j := idx[a], idx[b]
+		c := keys[i].cmp(&keys[j])
+		if c != 0 {
+			return c < 0
+		}
+		return sortorder.NaturalLess(ee[i].Row.ID, ee[j].Row.ID)
+	})
+	// Descending is the exact mirror of ascending, ties included.
+	if !asc {
+		slices.Reverse(idx)
+	}
+
+	out := make([]RowEvent, len(ee))
+	for a, i := range idx {
+		out[a] = ee[i]
+	}
+	r.events = out
 	r.reindex()
 }
 
@@ -290,36 +354,4 @@ func (re RowEvents) Dump(msg string) {
 	for _, r := range re.events {
 		slog.Debug(fmt.Sprintf("   %#v", r))
 	}
-}
-
-// ----------------------------------------------------------------------------
-
-// RowEventSorter sorts row events by a given colon.
-type RowEventSorter struct {
-	Events     *RowEvents
-	Index      int
-	NS         string
-	IsNumber   bool
-	IsDuration bool
-	IsCapacity bool
-	Asc        bool
-}
-
-func (r RowEventSorter) Len() int {
-	return len(r.Events.events)
-}
-
-func (r RowEventSorter) Swap(i, j int) {
-	r.Events.events[i], r.Events.events[j] = r.Events.events[j], r.Events.events[i]
-}
-
-func (r RowEventSorter) Less(i, j int) bool {
-	f1, f2 := r.Events.events[i].Row.Fields, r.Events.events[j].Row.Fields
-	id1, id2 := r.Events.events[i].Row.ID, r.Events.events[j].Row.ID
-	less := Less(r.IsNumber, r.IsDuration, r.IsCapacity, id1, id2, f1[r.Index], f2[r.Index])
-	if r.Asc {
-		return less
-	}
-
-	return !less
 }
