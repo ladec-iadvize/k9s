@@ -6,11 +6,11 @@ package dao
 import (
 	"bytes"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/derailed/k9s/internal"
+	"github.com/derailed/k9s/internal/model1"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -199,7 +199,7 @@ func (l *LogItems) filterLogs(index int, q string, showTime bool) (matches []int
 		invert = true
 		q = q[1:]
 	}
-	rx, err := regexp.Compile(`(?i)` + q)
+	rx, err := model1.CompileFilterRx(`(?i)` + q)
 	if err != nil {
 		return nil, nil, err
 	}

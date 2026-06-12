@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/derailed/k9s/internal"
@@ -15,6 +14,7 @@ import (
 	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/model"
+	"github.com/derailed/k9s/internal/model1"
 	"github.com/derailed/k9s/internal/render"
 	"github.com/derailed/k9s/internal/slogs"
 	"github.com/derailed/k9s/internal/ui"
@@ -741,7 +741,10 @@ func fuzzyFilter(q, path string) bool {
 }
 
 func rxFilter(q, path string) bool {
-	rx := regexp.MustCompile(`(?i)` + q)
+	rx, err := model1.CompileFilterRx(`(?i)` + q)
+	if err != nil {
+		return true
+	}
 	tokens := strings.Split(path, xray.PathSeparator)
 	for _, t := range tokens {
 		if rx.MatchString(t) {
@@ -754,7 +757,10 @@ func rxFilter(q, path string) bool {
 
 func rxInverseFilter(q, path string) bool {
 	q = strings.TrimSpace(q[1:])
-	rx := regexp.MustCompile(`(?i)` + q)
+	rx, err := model1.CompileFilterRx(`(?i)` + q)
+	if err != nil {
+		return true
+	}
 	tokens := strings.Split(path, xray.PathSeparator)
 	for _, t := range tokens {
 		if rx.MatchString(t) {

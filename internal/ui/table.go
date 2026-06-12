@@ -473,9 +473,14 @@ func (t *Table) UpdateUI(cdata, data *model1.TableData) {
 	fg := t.styles.Table().Header.FgColor.Color()
 	bg := t.styles.Table().Header.BgColor.Color()
 
+	// Column exclusion is invariant for the whole update: compute it once
+	// instead of per cell.
+	header := cdata.Header()
+	excluded := make([]bool, len(header))
 	var col int
-	for _, h := range cdata.Header() {
+	for i, h := range header {
 		if t.shouldExcludeColumn(h) {
+			excluded[i] = true
 			continue
 		}
 		t.AddHeaderCell(col, h)
@@ -494,7 +499,7 @@ func (t *Table) UpdateUI(cdata, data *model1.TableData) {
 			slog.Error("Unable to find original row event", slogs.RowID, re.Row.ID)
 			return true
 		}
-		t.buildRow(row+1, re, ore, cdata.Header(), pads)
+		t.buildRow(row+1, re, ore, header, excluded, pads)
 
 		return true
 	})
@@ -503,7 +508,7 @@ func (t *Table) UpdateUI(cdata, data *model1.TableData) {
 	t.UpdateTitle()
 }
 
-func (t *Table) buildRow(r int, re, ore model1.RowEvent, h model1.Header, pads MaxyPad) {
+func (t *Table) buildRow(r int, re, ore model1.RowEvent, h model1.Header, excluded []bool, pads MaxyPad) {
 	color := model1.DefaultColorer
 	if t.colorerFn != nil {
 		color = t.colorerFn
@@ -521,7 +526,7 @@ func (t *Table) buildRow(r int, re, ore model1.RowEvent, h model1.Header, pads M
 			)
 			continue
 		}
-		if t.shouldExcludeColumn(h[c]) {
+		if excluded[c] {
 			continue
 		}
 

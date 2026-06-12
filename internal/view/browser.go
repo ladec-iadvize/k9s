@@ -43,6 +43,11 @@ type Browser struct {
 	mx         sync.RWMutex
 	updating   bool
 	firstView  atomic.Int32
+
+	// lastData tracks the last rendered table so identical refresh ticks
+	// can skip the full UI rebuild.
+	lastData       *model1.TableData
+	lastHasMetrics bool
 }
 
 // NewBrowser returns a new browser.
@@ -173,6 +178,9 @@ func (b *Browser) Start() {
 
 	b.Stop()
 	b.firstView.Store(0) // Reset first view counter on each start
+	b.mx.Lock()
+	b.lastData = nil
+	b.mx.Unlock()
 	b.GetModel().AddListener(b)
 	b.Table.Start()
 	b.CmdBuff().AddListener(b)
@@ -345,7 +353,23 @@ func (b *Browser) TableDataChanged(mdata *model1.TableData) {
 		return
 	}
 
-	cdata := b.Update(mdata, b.app.Conn().HasMetrics())
+	// Skip the full UI rebuild when this tick carries the exact same data
+	// as the last one rendered. Explicit user actions (filter, sort, marks)
+	// redraw via Refresh() and are unaffected.
+	hasMetrics := b.app.Conn().HasMetrics()
+	b.mx.RLock()
+	last, lastMX := b.lastData, b.lastHasMetrics
+	b.mx.RUnlock()
+	if last != nil && lastMX == hasMetrics && last.Same(mdata) {
+		return
+	}
+	// Snapshot before Update: decorators and sort mutate mdata in place.
+	snapshot := mdata.Clone()
+	b.mx.Lock()
+	b.lastData, b.lastHasMetrics = snapshot, hasMetrics
+	b.mx.Unlock()
+
+	cdata := b.Update(mdata, hasMetrics)
 	b.app.QueueUpdateDraw(func() {
 		if b.getUpdating() {
 			return

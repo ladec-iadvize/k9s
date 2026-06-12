@@ -106,15 +106,22 @@ func labelize(labels string) map[string]string {
 }
 
 func durationToSeconds(duration string) int64 {
+	n, _ := parseDuration(duration)
+	return n
+}
+
+// parseDuration converts a humanized duration to seconds. ok is false when
+// no time unit was found (e.g. the field holds a raw timestamp instead).
+func parseDuration(duration string) (n int64, ok bool) {
 	if duration == "" {
-		return 0
+		return 0, true
 	}
 	if duration == NAValue {
-		return math.MaxInt64
+		return math.MaxInt64, true
 	}
 
 	num := make([]rune, 0, 5)
-	var n, m int64
+	var m int64
 	for _, r := range duration {
 		switch r {
 		case 'y':
@@ -131,10 +138,10 @@ func durationToSeconds(duration string) int64 {
 			num = append(num, r)
 			continue
 		}
-		n, num = n+runesToNum(num)*m, num[:0]
+		n, num, ok = n+runesToNum(num)*m, num[:0], true
 	}
 
-	return n
+	return n, ok
 }
 
 func runesToNum(rr []rune) int64 {
@@ -150,11 +157,68 @@ func runesToNum(rr []rune) int64 {
 }
 
 func capacityToNumber(capacity string) int64 {
-	if strings.TrimSpace(capacity) == "" {
+	capacity = strings.TrimSpace(capacity)
+	if capacity == "" {
 		return 0
 	}
-	quantity := resource.MustParse(capacity)
+	quantity, err := resource.ParseQuantity(capacity)
+	if err != nil {
+		return 0
+	}
 	return quantity.Value()
+}
+
+// sortKey is a precomputed row sort key: numeric columns compare on num,
+// everything else on str via natural ordering.
+type sortKey struct {
+	str   string
+	num   int64
+	isNum bool
+}
+
+func makeSortKey(v string, isDuration, isNumber, isCapacity bool) sortKey {
+	switch {
+	case isDuration:
+		// Time columns may hold raw timestamps instead of durations:
+		// those sort chronologically via natural string ordering.
+		if n, ok := parseDuration(v); ok {
+			return sortKey{num: n, isNum: true}
+		}
+		return sortKey{str: v}
+	case isCapacity:
+		return sortKey{num: capacityToNumber(v), isNum: true}
+	case isNumber:
+		return sortKey{str: strings.ReplaceAll(v, ",", "")}
+	default:
+		return sortKey{str: v}
+	}
+}
+
+func (k *sortKey) cmp(o *sortKey) int {
+	if k.isNum != o.isNum {
+		// Mixed column: numeric keys sort first.
+		if k.isNum {
+			return -1
+		}
+		return 1
+	}
+	if k.isNum {
+		switch {
+		case k.num < o.num:
+			return -1
+		case k.num > o.num:
+			return 1
+		default:
+			return 0
+		}
+	}
+	if k.str == o.str {
+		return 0
+	}
+	if sortorder.NaturalLess(k.str, o.str) {
+		return -1
+	}
+	return 1
 }
 
 // Less return true if c1 <= c2.
