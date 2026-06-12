@@ -16,6 +16,7 @@ import (
 
 	"github.com/derailed/k9s/internal"
 	"github.com/derailed/k9s/internal/client"
+	"github.com/derailed/k9s/internal/config"
 	"github.com/derailed/k9s/internal/config/data"
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/model"
@@ -158,7 +159,39 @@ func (b *Browser) bindKeys(aa *ui.KeyActions) {
 		ui.KeyQ:         ui.NewSharedKeyAction("Filter Reset", b.resetCmd, false),
 		tcell.KeyEnter:  ui.NewSharedKeyAction("Filter", b.filterCmd, false),
 		tcell.KeyHelp:   ui.NewSharedKeyAction("Help", b.helpCmd, false),
+		tcell.KeyCtrlB:  ui.NewKeyAction("Bookmark", b.bookmarkCmd, false),
 	})
+}
+
+// bookmarkCmd toggles a bookmark on the selected resource.
+func (b *Browser) bookmarkCmd(evt *tcell.EventKey) *tcell.EventKey {
+	path := b.GetSelectedItem()
+	if path == "" {
+		return evt
+	}
+
+	file := b.app.Config.ContextBookmarksPath()
+	if file == "" {
+		b.App().Flash().Err(fmt.Errorf("unable to resolve bookmarks file for active context"))
+		return nil
+	}
+	bm := config.NewBookmarks(file)
+	if err := bm.Load(); err != nil {
+		b.App().Flash().Err(err)
+		return nil
+	}
+	added := bm.Toggle(b.GVR().String(), path)
+	if err := bm.Save(); err != nil {
+		b.App().Flash().Err(err)
+		return nil
+	}
+	if added {
+		b.App().Flash().Infof("Bookmarked %s", path)
+	} else {
+		b.App().Flash().Infof("Bookmark removed for %s", path)
+	}
+
+	return nil
 }
 
 // SetInstance sets a single instance view.

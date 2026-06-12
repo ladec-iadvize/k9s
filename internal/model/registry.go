@@ -83,6 +83,10 @@ var Registry = map[*client.GVR]ResourceMeta{
 		DAO:      new(dao.Alias),
 		Renderer: new(render.Alias),
 	},
+	client.BkGVR: {
+		DAO:      new(dao.Bookmark),
+		Renderer: new(render.Bookmark),
+	},
 
 	// Discovery...
 	client.EpsGVR: {
