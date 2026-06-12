@@ -60,6 +60,16 @@ func (c *Config) ContextHotkeysPath() string {
 	return AppContextHotkeysFile(ct.ClusterName, c.K9s.activeContextName)
 }
 
+// ContextBookmarksPath returns a context specific bookmarks file spec.
+func (c *Config) ContextBookmarksPath() string {
+	ct, err := c.K9s.ActiveContext()
+	if err != nil {
+		return ""
+	}
+
+	return AppContextBookmarksFile(ct.GetClusterName(), c.K9s.activeContextName)
+}
+
 // ContextAliasesPath returns a context specific aliases file spec.
 func (c *Config) ContextAliasesPath() string {
 	ct, err := c.K9s.ActiveContext()

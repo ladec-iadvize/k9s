@@ -84,6 +84,9 @@ func miscViewers(vv MetaViewers) {
 	vv[client.AliGVR] = MetaViewer{
 		viewerFn: NewAlias,
 	}
+	vv[client.BkGVR] = MetaViewer{
+		viewerFn: NewBookmark,
+	}
 	vv[client.RefGVR] = MetaViewer{
 		viewerFn: NewReference,
 	}

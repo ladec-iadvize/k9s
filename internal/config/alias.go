@@ -185,6 +185,7 @@ func (a *Aliases) loadDefaultAliases() {
 	a.declare(client.HlpGVR, "h", "?")
 	a.declare(client.QGVR, "q", "q!", "qa", "Q")
 	a.declare(client.AliGVR, "alias", "a")
+	a.declare(client.BkGVR, "bookmarks", "bookmark", "bk", "fav")
 	a.declare(client.HmGVR, "charts", "chart", "hm")
 	a.declare(client.DirGVR, "dir", "d")
 	a.declare(client.CtGVR, "context", "ctx")

@@ -63,6 +63,7 @@ var (
 	SdGVR  = NewGVR("screendumps")
 	BeGVR  = NewGVR("benchmarks")
 	AliGVR = NewGVR("aliases")
+	BkGVR  = NewGVR("bookmarks")
 	XGVR   = NewGVR("xrays")
 	HlpGVR = NewGVR("help")
 	QGVR   = NewGVR("quit")
@@ -96,6 +97,7 @@ var reservedGVRs = sets.New(
 	SdGVR,
 	BeGVR,
 	AliGVR,
+	BkGVR,
 	XGVR,
 	HlpGVR,
 	QGVR,
