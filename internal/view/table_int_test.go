@@ -73,6 +73,37 @@ func TestTableNew(t *testing.T) {
 	assert.Equal(t, 3, v.GetRowCount())
 }
 
+func TestTableViewHeaderIndex(t *testing.T) {
+	v := NewTable(client.NewGVR("test"))
+	require.NoError(t, v.Init(makeContext(t)))
+	v.SetModel(new(mockTableModel))
+	v.Refresh()
+
+	// Header cells carry tview color tags ("[color::]NAME[::]"):
+	// HeaderIndex must strip them to match plain column names.
+	uu := map[string]struct {
+		col string
+		idx int
+		ok  bool
+	}{
+		// NAMESPACE is excluded since the view is not cluster wide.
+		"first":    {col: "NAME", idx: 0, ok: true},
+		"middle":   {col: "FRED", idx: 1, ok: true},
+		"last":     {col: "AGE", idx: 2, ok: true},
+		"missing":  {col: "READY"},
+		"excluded": {col: "NAMESPACE"},
+	}
+
+	for k := range uu {
+		u := uu[k]
+		t.Run(k, func(t *testing.T) {
+			idx, ok := v.HeaderIndex(u.col)
+			assert.Equal(t, u.ok, ok)
+			assert.Equal(t, u.idx, idx)
+		})
+	}
+}
+
 func TestTableViewFilter(t *testing.T) {
 	v := NewTable(client.NewGVR("test"))
 	require.NoError(t, v.Init(makeContext(t)))
