@@ -56,6 +56,9 @@ func (t *Table) Init(ctx context.Context) (err error) {
 			slog.Warn("CustomViews load failed", slogs.Error, err)
 			t.app.Logo().Warn("Views load failed!")
 		}
+		if err := t.app.RefreshCustomJumps(); err != nil {
+			slog.Warn("CustomJumps load failed", slogs.Error, err)
+		}
 	}
 	t.SetInputCapture(t.keyboard)
 	t.bindKeys()
@@ -72,7 +75,7 @@ func (t *Table) SetCommand(i *cmd.Interpreter) {
 
 // HeaderIndex returns index of a given column or false if not found.
 func (t *Table) HeaderIndex(colName string) (int, bool) {
-	for i := range t.GetColumnCount() {
+	for i := 0; i < t.GetColumnCount(); i++ {
 		h := t.GetCell(0, i)
 		if h == nil {
 			continue
@@ -80,10 +83,14 @@ func (t *Table) HeaderIndex(colName string) (int, bool) {
 		s := h.Text
 		// Header cells are formatted as "[color::]NAME[::]" by columnIndicator,
 		// with an optional "[color::b]<arrow>[::]" sort indicator suffix.
-		if strings.HasPrefix(s, "[") {
-			if end := strings.Index(s, "]"); end >= 0 {
-				s = s[end+1:]
+		// Strip tags positionally rather than via regex: column names may
+		// contain non-word chars (e.g. "%CPU/R") that a \w-based match misses.
+		for strings.HasPrefix(s, "[") {
+			end := strings.Index(s, "]")
+			if end < 0 {
+				break
 			}
+			s = s[end+1:]
 		}
 		if end := strings.Index(s, "["); end >= 0 {
 			s = s[:end]
@@ -92,6 +99,7 @@ func (t *Table) HeaderIndex(colName string) (int, bool) {
 			return i, true
 		}
 	}
+
 	return 0, false
 }
 
