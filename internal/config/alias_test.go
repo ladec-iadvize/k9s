@@ -113,7 +113,7 @@ func TestAliasesLoad(t *testing.T) {
 	a := config.NewAliases()
 	require.NoError(t, a.Load(path.Join(config.AppConfigDir, "plain.yaml")))
 
-	assert.Len(t, a.Alias, 59)
+	assert.Len(t, a.Alias, 67)
 }
 
 func TestAliasesSave(t *testing.T) {

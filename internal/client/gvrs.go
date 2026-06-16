@@ -64,6 +64,8 @@ var (
 	BeGVR  = NewGVR("benchmarks")
 	AliGVR = NewGVR("aliases")
 	BkGVR  = NewGVR("bookmarks")
+	NtGVR  = NewGVR("node-topology")
+	NmGVR  = NewGVR("node-monitoring")
 	XGVR   = NewGVR("xrays")
 	HlpGVR = NewGVR("help")
 	QGVR   = NewGVR("quit")
@@ -98,6 +100,8 @@ var reservedGVRs = sets.New(
 	BeGVR,
 	AliGVR,
 	BkGVR,
+	NtGVR,
+	NmGVR,
 	XGVR,
 	HlpGVR,
 	QGVR,
