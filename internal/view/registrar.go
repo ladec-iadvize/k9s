@@ -93,6 +93,12 @@ func miscViewers(vv MetaViewers) {
 	vv[client.PuGVR] = MetaViewer{
 		viewerFn: NewPulse,
 	}
+	vv[client.NtGVR] = MetaViewer{
+		viewerFn: NewNodeTopology,
+	}
+	vv[client.NmGVR] = MetaViewer{
+		viewerFn: NewNodeMonitoring,
+	}
 }
 
 func appsViewers(vv MetaViewers) {
