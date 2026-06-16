@@ -53,6 +53,8 @@ type podReq struct {
 // nodeTopo aggregates filling data for a single node.
 type nodeTopo struct {
 	name               string
+	instanceType       string
+	nodeClass          string
 	allocCPU, allocMEM int64
 	usageCPU, usageMEM int64
 	reqs               []podReq
@@ -61,6 +63,19 @@ type nodeTopo struct {
 
 func (n *nodeTopo) cpuPerc() int { return client.ToPercentage(n.usageCPU, n.allocCPU) }
 func (n *nodeTopo) memPerc() int { return client.ToPercentage(n.usageMEM, n.allocMEM) }
+
+// meta returns the parenthesized node descriptor: nodeclass · type · pods.
+func (n *nodeTopo) meta() string {
+	parts := make([]string, 0, 3)
+	if n.nodeClass != "" {
+		parts = append(parts, n.nodeClass)
+	}
+	if n.instanceType != "" {
+		parts = append(parts, n.instanceType)
+	}
+	parts = append(parts, fmt.Sprintf("%d pods", n.podCount))
+	return strings.Join(parts, " · ")
+}
 
 // nodeFillView is a per-node CPU/MEM bar view, shared by the monitoring
 // (live usage) and topology (per-pod reservation) views.
@@ -71,6 +86,7 @@ type nodeFillView struct {
 	gvr       *client.GVR
 	title     string
 	barFn     barFunc
+	lightSel  bool // brighten the selection background
 	actions   *ui.KeyActions
 	cancelFn  context.CancelFunc
 	nodes     []nodeTopo
@@ -80,12 +96,13 @@ type nodeFillView struct {
 	filtering bool
 }
 
-func newNodeFillView(gvr *client.GVR, title string, fn barFunc) *nodeFillView {
+func newNodeFillView(gvr *client.GVR, title string, fn barFunc, lightSel bool) *nodeFillView {
 	return &nodeFillView{
 		TextView: tview.NewTextView(),
 		gvr:      gvr,
 		title:    title,
 		barFn:    fn,
+		lightSel: lightSel,
 		actions:  ui.NewKeyActions(),
 		sortKey:  "name",
 	}
@@ -93,12 +110,12 @@ func newNodeFillView(gvr *client.GVR, title string, fn barFunc) *nodeFillView {
 
 // NewNodeMonitoring returns a node live-usage view (à la lazy-for-kubernetes).
 func NewNodeMonitoring(gvr *client.GVR) ResourceViewer {
-	return newNodeFillView(gvr, "Node Monitoring", usageBar)
+	return newNodeFillView(gvr, "Node Monitoring", usageBar, false)
 }
 
 // NewNodeTopology returns a node reservation view (per-pod requests).
 func NewNodeTopology(gvr *client.GVR) ResourceViewer {
-	return newNodeFillView(gvr, "Node Topology", reservationBar)
+	return newNodeFillView(gvr, "Node Topology", reservationBar, true)
 }
 
 // Init initializes the view.
@@ -222,11 +239,13 @@ func (v *nodeFillView) gather() ([]nodeTopo, error) {
 			continue
 		}
 		nt := nodeTopo{
-			name:     no.Name,
-			allocCPU: no.Status.Allocatable.Cpu().MilliValue(),
-			allocMEM: no.Status.Allocatable.Memory().Value(),
-			reqs:     reqByNode[no.Name],
-			podCount: countByNode[no.Name],
+			name:         no.Name,
+			instanceType: no.Labels["node.kubernetes.io/instance-type"],
+			nodeClass:    no.Labels["karpenter.k8s.aws/ec2nodeclass"],
+			allocCPU:     no.Status.Allocatable.Cpu().MilliValue(),
+			allocMEM:     no.Status.Allocatable.Memory().Value(),
+			reqs:         reqByNode[no.Name],
+			podCount:     countByNode[no.Name],
 		}
 		if mx, ok := mxMap[no.Name]; ok && mx != nil {
 			nt.usageCPU = mx.Usage.Cpu().MilliValue()
@@ -307,8 +326,11 @@ func (v *nodeFillView) render() {
 
 	// k9s draws highlighted regions inverted (fg/bg swapped), so pre-swap the
 	// selected line with cursorBg/cursorFg to land on the standard cursor colors.
-	cFg := v.app.Styles.Table().CursorFgColor.String()
-	cBg := v.app.Styles.Table().CursorBgColor.String()
+	selFg := v.app.Styles.Table().CursorFgColor.String()
+	selBg := v.app.Styles.Table().CursorBgColor.String()
+	if v.lightSel {
+		selBg = lighten(v.app.Styles.Table().CursorBgColor.Color(), 0.5)
+	}
 
 	var b strings.Builder
 	for i := range nodes {
@@ -316,15 +338,27 @@ func (v *nodeFillView) render() {
 		// Region spans the name line only, so the highlight does not wash
 		// out the colored bars below it.
 		if i == v.selected {
-			fmt.Fprintf(&b, `["n%d"][%s:%s:b] ● %s (%d pods)[""][-:-:-]`+"\n", i, cBg, cFg, n.name, n.podCount)
+			fmt.Fprintf(&b, `["n%d"][%s:%s:b] ● %s (%s)[""][-:-:-]`+"\n", i, selBg, selFg, n.name, n.meta())
 		} else {
-			fmt.Fprintf(&b, `["n%d"] [green::]●[-:-:-] [white::b]%s[-:-:-] [gray::](%d pods)[""]`+"\n", i, n.name, n.podCount)
+			fmt.Fprintf(&b, `["n%d"] [green::]●[-:-:-] [white::b]%s[-:-:-] [gray::](%s)[""]`+"\n", i, n.name, n.meta())
 		}
 		fmt.Fprintf(&b, "     [::b]CPU[::-] %s    [::b]MEM[::-] %s\n", v.barFn(v, n, true), v.barFn(v, n, false))
 	}
 	fmt.Fprint(v, b.String())
 
 	v.Highlight(fmt.Sprintf("n%d", v.selected)).ScrollToHighlight()
+}
+
+// lighten blends a color toward white by factor f (0..1) and returns a hex tag.
+func lighten(c tcell.Color, f float64) string {
+	if !c.Valid() {
+		return "white"
+	}
+	r, g, b := c.RGB()
+	lr := r + int32(float64(255-r)*f)
+	lg := g + int32(float64(255-g)*f)
+	lb := b + int32(float64(255-b)*f)
+	return fmt.Sprintf("#%02x%02x%02x", lr, lg, lb)
 }
 
 // severity returns the threshold color for a metric percentage (capped at 100
