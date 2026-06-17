@@ -9,6 +9,19 @@ for changes and offers subsequent commands to interact with your observed resour
 
 ---
 
+## About this fork (`ladec-iadvize/k9s`)
+
+This fork tracks upstream and adds a few extras on top:
+
+* **Node monitoring** view (`:monitoring`, `:mon`) — per-node CPU/MEM bars filled by live usage (metrics-server / allocatable), à la [lazy-for-kubernetes](https://github.com/ddymko/lfk).
+* **Node topology** view (`:topology`, `:topo`) — per-node CPU/MEM bars where each pod is a distinct colored block sized by its resource request, with free capacity shown as the empty tail. `/` filters by node name, nodeclass or instance type; `c`/`m`/`n` sort, `Enter` jumps to the node's pods.
+* **Resource bookmarks** (`Ctrl-B` to toggle, `:bookmarks`) — pin resources and reopen them from any view.
+* Performance and stability fixes for large clusters: lower idle CPU, metrics timeouts, and scale edge cases.
+
+This fork is not published to releases or package managers — [build it from source](#installation).
+
+---
+
 ## Note...
 
 K9s is not pimped out by a big corporation with deep pockets.
@@ -77,143 +90,23 @@ Wanna discuss K9s features with your fellow `K9sers` or simply show your support
 
 ## Installation
 
-K9s is available on Linux, macOS and Windows platforms.
-Binaries for Linux, Windows and Mac are available as tarballs in the [release page](https://github.com/derailed/k9s/releases).
+This fork has no published releases or package-manager builds. Install it by building from source (needs Go, see `go.mod`):
 
-* Via [Homebrew](https://brew.sh/) for macOS or Linux
+```shell
+git clone https://github.com/ladec-iadvize/k9s.git
+cd k9s
+make build            # builds ./execs/k9s
+```
 
-   ```shell
-   brew install derailed/k9s/k9s
-   ```
+Then run `./execs/k9s`, or put it on your `PATH`:
 
-* Via [MacPorts](https://www.macports.org)
-
-   ```shell
-   sudo port install k9s
-   ```
-
-* Via [snap](https://snapcraft.io/k9s) for Linux
-
-  ```shell
-  snap install k9s --devmode
-  ```
-
-* On Arch Linux
-
-  ```shell
-  pacman -S k9s
-  ```
-
-* On OpenSUSE Linux distribution
-
-  ```shell
-  zypper install k9s
-  ```
-
-* On FreeBSD
-
-  ```shell
-  pkg install k9s
-  ```
-
-* On Ubuntu
-
-  ```shell
-  wget https://github.com/derailed/k9s/releases/latest/download/k9s_linux_amd64.deb && sudo apt install ./k9s_linux_amd64.deb && rm k9s_linux_amd64.deb
-  ```
-
-* On Fedora (42+)
-
-  ```shell
-  dnf install k9s
-  ```
-
-* Via [Winget](https://github.com/microsoft/winget-cli) for Windows
-
-  ```shell
-  winget install k9s
-  ```
-
-* Via [Scoop](https://scoop.sh) for Windows
-
-  ```shell
-  scoop install k9s
-  ```
-
-* Via [Chocolatey](https://chocolatey.org/packages/k9s) for Windows
-
-  ```shell
-  choco install k9s
-  ```
-
-* Via a GO install
-
-  ```shell
-  # NOTE: The dev version will be in effect!
-  go install github.com/derailed/k9s@latest
-  ```
-
-* Via [Webi](https://webinstall.dev) for Linux and macOS
-
-  ```shell
-  curl -sS https://webinstall.dev/k9s | bash
-  ```
-
-* Via [pkgx](https://pkgx.dev/pkgs/k9scli.io/) for Linux and macOS
-
-  ```shell
-  pkgx k9s
-  ```
-
-* Via [gah](https://github.com/marverix/gah) for Linux and macOS
-
-  ```shell
-  gah install k9s
-  ```
-
-* Via [Webi](https://webinstall.dev) for Windows
-
-  ```shell
-  curl.exe -A MS https://webinstall.dev/k9s | powershell
-  ```
-
-* As a [Docker Desktop Extension](https://docs.docker.com/desktop/extensions/) (for the Docker Desktop built in Kubernetes Server)
-
-  ```shell
-  docker extension install spurin/k9s-dd-extension:latest
-  ```
-
----
-
-## Building From Source
-
- K9s is currently using GO v1.23.X or above.
- In order to build K9s from source you must:
-
- 1. Clone the repo
- 2. Build and run the executable
-
-      ```shell
-      make build && ./execs/k9s
-      ```
+```shell
+sudo install execs/k9s /usr/local/bin/k9s
+```
 
 ---
 
 ## Running with Docker
-
-### Running the official Docker image
-
-  You can run k9s as a Docker container by mounting your `KUBECONFIG`:
-
-  ```shell
-  docker run --rm -it -v $KUBECONFIG:/root/.kube/config derailed/k9s
-  ```
-
-  For default path it would be:
-
-  ```shell
-  docker run --rm -it -v ~/.kube/config:/root/.kube/config derailed/k9s
-  ```
 
 ### Building your own Docker image
 
