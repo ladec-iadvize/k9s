@@ -39,14 +39,35 @@ const (
 	sizingLowPct = 30
 	// sizingTargetPct is the utilization we aim for when recommending.
 	sizingTargetPct = 50
+)
 
-	sizingColCount = 13
+// Column indices for the sizing table. colSep is a vertical rule separating the
+// CPU block from the MEM block.
+const (
+	colNS = iota
+	colDP
+	colPods
+	colCPUReq
+	colCPUUse
+	colCPUPerc
+	colCPUReco
+	colCPUWaste
+	colSep
+	colMEMReq
+	colMEMUse
+	colMEMPerc
+	colMEMReco
+	colMEMWaste
+	sizingColCount
 )
 
 var sizingHeaders = [sizingColCount]string{
-	"NAMESPACE", "DEPLOYMENT", "PODS",
-	"CPU/REQ", "CPU/USE", "CPU%", "CPU→RECO", "CPU/WASTE",
-	"MEM/REQ", "MEM/USE", "MEM%", "MEM→RECO", "MEM/WASTE",
+	colNS: "NAMESPACE", colDP: "DEPLOYMENT", colPods: "PODS",
+	colCPUReq: "CPU/REQ", colCPUUse: "CPU/USE", colCPUPerc: "CPU%",
+	colCPUReco: "CPU→RECO", colCPUWaste: "CPU/WASTE",
+	colSep:    "│",
+	colMEMReq: "MEM/REQ", colMEMUse: "MEM/USE", colMEMPerc: "MEM%",
+	colMEMReco: "MEM→RECO", colMEMWaste: "MEM/WASTE",
 }
 
 // sizingRow holds the per-pod requests/usage of one deployment plus the
@@ -323,11 +344,15 @@ func (v *sizingView) render() {
 	styles := v.app.Styles
 	hdrColor := styles.Table().Header.FgColor.Color()
 	for c, h := range sizingHeaders {
+		if c == colSep {
+			v.SetCell(0, c, sizingSepCell(false))
+			continue
+		}
 		cell := tview.NewTableCell(" " + h + " ").
 			SetTextColor(hdrColor).
 			SetAttributes(tcell.AttrBold).
 			SetSelectable(false)
-		if c >= 2 {
+		if c >= colPods {
 			cell.SetAlign(tview.AlignRight)
 		}
 		v.SetCell(0, c, cell)
@@ -348,37 +373,40 @@ func (v *sizingView) render() {
 			v.SetCell(i+1, col, cell)
 		}
 
-		set(0, r.namespace, fg, false)
-		set(1, r.name, fg, false)
+		set(colNS, r.namespace, fg, false)
+		set(colDP, r.name, fg, false)
+		v.SetCell(i+1, colSep, sizingSepCell(true))
 		if !r.hasData() {
-			set(2, "-", dim, true)
-			for c := 3; c < sizingColCount; c++ {
+			for _, c := range []int{
+				colPods, colCPUReq, colCPUUse, colCPUPerc, colCPUReco, colCPUWaste,
+				colMEMReq, colMEMUse, colMEMPerc, colMEMReco, colMEMWaste,
+			} {
 				set(c, "-", dim, true)
 			}
 			continue
 		}
 
-		set(2, fmt.Sprintf("%d", r.pods), fg, true)
+		set(colPods, fmt.Sprintf("%d", r.pods), fg, true)
 		// CPU
-		set(3, fmtCPU(r.cpuReq), fg, true)
-		set(4, fmtCPU(r.cpuUse), fg, true)
-		set(5, fmt.Sprintf("%d%%", r.cpuPerc()), v.severity("cpu", r.cpuPerc()), true)
+		set(colCPUReq, fmtCPU(r.cpuReq), fg, true)
+		set(colCPUUse, fmtCPU(r.cpuUse), fg, true)
+		set(colCPUPerc, fmt.Sprintf("%d%%", r.cpuPerc()), v.severity("cpu", r.cpuPerc()), true)
 		if rec, yes := reco(r.cpuUse, r.cpuReq); yes {
-			set(6, "→ "+fmtCPU(rec), tcell.ColorOrange, true)
+			set(colCPUReco, "→ "+fmtCPU(rec), tcell.ColorOrange, true)
 		} else {
-			set(6, "ok", ok, true)
+			set(colCPUReco, "ok", ok, true)
 		}
-		set(7, fmtCPU(waste(r.cpuUse, r.cpuReq, r.pods)), dim, true)
+		set(colCPUWaste, fmtCPU(waste(r.cpuUse, r.cpuReq, r.pods)), dim, true)
 		// MEM
-		set(8, fmtMem(r.memReq), fg, true)
-		set(9, fmtMem(r.memUse), fg, true)
-		set(10, fmt.Sprintf("%d%%", r.memPerc()), v.severity("memory", r.memPerc()), true)
+		set(colMEMReq, fmtMem(r.memReq), fg, true)
+		set(colMEMUse, fmtMem(r.memUse), fg, true)
+		set(colMEMPerc, fmt.Sprintf("%d%%", r.memPerc()), v.severity("memory", r.memPerc()), true)
 		if rec, yes := reco(r.memUse, r.memReq); yes {
-			set(11, "→ "+fmtMem(rec), tcell.ColorOrange, true)
+			set(colMEMReco, "→ "+fmtMem(rec), tcell.ColorOrange, true)
 		} else {
-			set(11, "ok", ok, true)
+			set(colMEMReco, "ok", ok, true)
 		}
-		set(12, fmtMem(waste(r.memUse, r.memReq, r.pods)), dim, true)
+		set(colMEMWaste, fmtMem(waste(r.memUse, r.memReq, r.pods)), dim, true)
 	}
 
 	if v.GetRowCount() > 1 {
@@ -401,6 +429,16 @@ func (v *sizingView) severity(metric string, perc int) tcell.Color {
 	return tcell.GetColor(v.app.Config.K9s.Thresholds.SeverityColor(metric, perc))
 }
 
+// sizingSepCell builds the vertical rule between the CPU and MEM blocks. Data
+// rows keep it selectable so the row highlight stays continuous; the header
+// rule is not selectable.
+func sizingSepCell(selectable bool) *tview.TableCell {
+	return tview.NewTableCell(" │ ").
+		SetTextColor(tcell.ColorGray).
+		SetAlign(tview.AlignCenter).
+		SetSelectable(selectable)
+}
+
 func fmtCPU(milli int64) string {
 	if milli <= 0 {
 		return "0"
@@ -408,11 +446,26 @@ func fmtCPU(milli int64) string {
 	return resource.NewMilliQuantity(milli, resource.DecimalSI).String()
 }
 
+// fmtMem renders bytes in a human-friendly binary unit: Mi below 1 Gi, Gi
+// above (with one decimal, trailing .0 trimmed). resource.Quantity is avoided
+// here because it dumps raw bytes for values that aren't a round power of two.
 func fmtMem(bytes int64) string {
 	if bytes <= 0 {
 		return "0"
 	}
-	return resource.NewQuantity(bytes, resource.BinarySI).String()
+	const (
+		mi = 1024 * 1024
+		gi = 1024 * mi
+	)
+	if bytes >= gi {
+		return trimZeroDec(float64(bytes)/float64(gi)) + "Gi"
+	}
+	return fmt.Sprintf("%dMi", (bytes+mi/2)/mi)
+}
+
+// trimZeroDec formats with one decimal but drops a trailing ".0".
+func trimZeroDec(f float64) string {
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", f), ".0")
 }
 
 func (v *sizingView) visibleRows() []sizingRow {

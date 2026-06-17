@@ -58,6 +58,27 @@ func TestSizingWaste(t *testing.T) {
 	}
 }
 
+func TestFmtMem(t *testing.T) {
+	uu := map[string]struct {
+		bytes int64
+		want  string
+	}{
+		"zero":          {bytes: 0, want: "0"},
+		"round Mi":      {bytes: 384 * 1024 * 1024, want: "384Mi"},
+		"round Gi":      {bytes: 5 * 1024 * 1024 * 1024, want: "5Gi"},
+		"arbitrary Mi":  {bytes: 504334290, want: "481Mi"},
+		"arbitrary Gi":  {bytes: 3286298316, want: "3.1Gi"},
+		"just under Gi": {bytes: 1023 * 1024 * 1024, want: "1023Mi"},
+	}
+
+	for k := range uu {
+		u := uu[k]
+		t.Run(k, func(t *testing.T) {
+			assert.Equal(t, u.want, fmtMem(u.bytes))
+		})
+	}
+}
+
 func TestSizingUsageQuery(t *testing.T) {
 	uu := map[string]struct {
 		metric    string
