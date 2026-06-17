@@ -329,12 +329,16 @@ func (v *nodeFillView) render() {
 		v.selected = 0
 	}
 
+	// Colors come from the active skin, like the rest of k9s.
+	tbl := v.app.Styles.Table()
+	fg := tbl.FgColor.String()         // row text (e.g. catppuccin lavender)
+	hdr := tbl.Header.FgColor.String() // header accent (e.g. catppuccin gold)
 	// k9s draws highlighted regions inverted (fg/bg swapped), so pre-swap the
 	// selected line with cursorBg/cursorFg to land on the standard cursor colors.
-	selFg := v.app.Styles.Table().CursorFgColor.String()
-	selBg := v.app.Styles.Table().CursorBgColor.String()
+	selFg := tbl.CursorFgColor.String()
+	selBg := tbl.CursorBgColor.String()
 	if v.lightSel {
-		selBg = lighten(v.app.Styles.Table().CursorBgColor.Color(), 0.5)
+		selBg = lighten(tbl.CursorBgColor.Color(), 0.5)
 	}
 
 	var b strings.Builder
@@ -345,9 +349,9 @@ func (v *nodeFillView) render() {
 		if i == v.selected {
 			fmt.Fprintf(&b, `["n%d"][%s:%s:b] ● %s (%s)[""][-:-:-]`+"\n", i, selBg, selFg, n.name, n.meta())
 		} else {
-			fmt.Fprintf(&b, `["n%d"] [green::]●[-:-:-] [white::b]%s[-:-:-] [gray::](%s)[""]`+"\n", i, n.name, n.meta())
+			fmt.Fprintf(&b, `["n%d"] [green::]●[-:-:-] [%s::b]%s[-:-:-] [%s::](%s)[""]`+"\n", i, fg, n.name, fg, n.meta())
 		}
-		fmt.Fprintf(&b, "     [::b]CPU[::-] %s    [::b]MEM[::-] %s\n", v.barFn(v, n, true), v.barFn(v, n, false))
+		fmt.Fprintf(&b, "     [%s::b]CPU[-:-:-] %s    [%s::b]MEM[-:-:-] %s\n", hdr, v.barFn(v, n, true), hdr, v.barFn(v, n, false))
 	}
 	fmt.Fprint(v, b.String())
 
@@ -382,7 +386,10 @@ func (v *nodeFillView) visibleNodes() []nodeTopo {
 	out := make([]nodeTopo, 0, len(v.nodes))
 	q := strings.ToLower(v.filter)
 	for _, n := range v.nodes {
-		if strings.Contains(strings.ToLower(n.name), q) {
+		// Match on node name, nodeclass or instance type (e.g. /spot, /m8g.2xlarge).
+		if strings.Contains(strings.ToLower(n.name), q) ||
+			strings.Contains(strings.ToLower(n.nodeClass), q) ||
+			strings.Contains(strings.ToLower(n.instanceType), q) {
 			out = append(out, n)
 		}
 	}
