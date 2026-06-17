@@ -86,7 +86,6 @@ type nodeFillView struct {
 	gvr      *client.GVR
 	title    string
 	barFn    barFunc
-	lightSel bool // brighten the selection background
 	actions  *ui.KeyActions
 	cmdBuff  *model.FishBuff
 	cancelFn context.CancelFunc
@@ -96,13 +95,12 @@ type nodeFillView struct {
 	filter   string
 }
 
-func newNodeFillView(gvr *client.GVR, title string, fn barFunc, lightSel bool) *nodeFillView {
+func newNodeFillView(gvr *client.GVR, title string, fn barFunc) *nodeFillView {
 	return &nodeFillView{
 		TextView: tview.NewTextView(),
 		gvr:      gvr,
 		title:    title,
 		barFn:    fn,
-		lightSel: lightSel,
 		actions:  ui.NewKeyActions(),
 		cmdBuff:  model.NewFishBuff('/', model.FilterBuffer),
 		sortKey:  "name",
@@ -111,12 +109,12 @@ func newNodeFillView(gvr *client.GVR, title string, fn barFunc, lightSel bool) *
 
 // NewNodeMonitoring returns a node live-usage view (à la lazy-for-kubernetes).
 func NewNodeMonitoring(gvr *client.GVR) ResourceViewer {
-	return newNodeFillView(gvr, "Node Monitoring", usageBar, false)
+	return newNodeFillView(gvr, "monitoring", usageBar)
 }
 
 // NewNodeTopology returns a node reservation view (per-pod requests).
 func NewNodeTopology(gvr *client.GVR) ResourceViewer {
-	return newNodeFillView(gvr, "Node Topology", reservationBar, true)
+	return newNodeFillView(gvr, "topology", reservationBar)
 }
 
 // Init initializes the view.
@@ -334,12 +332,10 @@ func (v *nodeFillView) render() {
 	fg := tbl.FgColor.String()         // row text (e.g. catppuccin lavender)
 	hdr := tbl.Header.FgColor.String() // header accent (e.g. catppuccin gold)
 	// k9s draws highlighted regions inverted (fg/bg swapped), so pre-swap the
-	// selected line with cursorBg/cursorFg to land on the standard cursor colors.
+	// selected line with cursorBg/cursorFg. Lighten the bg so the selection
+	// stays readable against the colored bars.
 	selFg := tbl.CursorFgColor.String()
-	selBg := tbl.CursorBgColor.String()
-	if v.lightSel {
-		selBg = lighten(tbl.CursorBgColor.Color(), 0.5)
-	}
+	selBg := lighten(tbl.CursorBgColor.Color(), 0.5)
 
 	var b strings.Builder
 	for i := range nodes {
@@ -416,8 +412,13 @@ func (v *nodeFillView) applySort() {
 func (v *nodeFillView) updateTitle() {
 	frame := v.app.Styles.Frame()
 	count := fmt.Sprintf("%d", len(v.visibleNodes()))
-	// Use the standard k9s title format: name in title color, count in counter color.
-	title := ui.SkinTitle(fmt.Sprintf(ui.TitleFmt, v.title, count), &frame)
+	// Nodes are cluster-wide, so show the namespace as "all" in the highlight
+	// color, like the native nodes view (e.g. topology(all)[131]).
+	ns := v.app.Config.ActiveNamespace()
+	if client.IsClusterWide(ns) || ns == client.NotNamespaced || ns == "" {
+		ns = client.NamespaceAll
+	}
+	title := ui.SkinTitle(fmt.Sprintf(ui.NSTitleFmt, v.title, ns, count), &frame)
 	if v.filter != "" {
 		title += ui.SkinTitle(fmt.Sprintf(ui.SearchFmt, v.filter), &frame)
 	}
