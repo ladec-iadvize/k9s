@@ -414,12 +414,14 @@ func (v *nodeFillView) applySort() {
 }
 
 func (v *nodeFillView) updateTitle() {
-	base := fmt.Sprintf(" %s [%d] ", v.title, len(v.visibleNodes()))
-	if v.filter != "" {
-		base = fmt.Sprintf(" %s [%d] </%s> ", v.title, len(v.visibleNodes()), v.filter)
-	}
 	frame := v.app.Styles.Frame()
-	v.SetTitle(ui.SkinTitle(base, &frame))
+	count := fmt.Sprintf("%d", len(v.visibleNodes()))
+	// Use the standard k9s title format: name in title color, count in counter color.
+	title := ui.SkinTitle(fmt.Sprintf(ui.TitleFmt, v.title, count), &frame)
+	if v.filter != "" {
+		title += ui.SkinTitle(fmt.Sprintf(ui.SearchFmt, v.filter), &frame)
+	}
+	v.SetTitle(title)
 }
 
 // ----------------------------------------------------------------------------
