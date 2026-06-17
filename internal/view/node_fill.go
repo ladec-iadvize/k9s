@@ -82,40 +82,39 @@ func (n *nodeTopo) meta() string {
 type nodeFillView struct {
 	*tview.TextView
 
-	app       *App
-	gvr       *client.GVR
-	title     string
-	barFn     barFunc
-	lightSel  bool // brighten the selection background
-	actions   *ui.KeyActions
-	cancelFn  context.CancelFunc
-	nodes     []nodeTopo
-	selected  int
-	sortKey   string // "name", "cpu" or "mem"
-	filter    string
-	filtering bool
+	app      *App
+	gvr      *client.GVR
+	title    string
+	barFn    barFunc
+	actions  *ui.KeyActions
+	cmdBuff  *model.FishBuff
+	cancelFn context.CancelFunc
+	nodes    []nodeTopo
+	selected int
+	sortKey  string // "name", "cpu" or "mem"
+	filter   string
 }
 
-func newNodeFillView(gvr *client.GVR, title string, fn barFunc, lightSel bool) *nodeFillView {
+func newNodeFillView(gvr *client.GVR, title string, fn barFunc) *nodeFillView {
 	return &nodeFillView{
 		TextView: tview.NewTextView(),
 		gvr:      gvr,
 		title:    title,
 		barFn:    fn,
-		lightSel: lightSel,
 		actions:  ui.NewKeyActions(),
+		cmdBuff:  model.NewFishBuff('/', model.FilterBuffer),
 		sortKey:  "name",
 	}
 }
 
 // NewNodeMonitoring returns a node live-usage view (à la lazy-for-kubernetes).
 func NewNodeMonitoring(gvr *client.GVR) ResourceViewer {
-	return newNodeFillView(gvr, "Node Monitoring", usageBar, false)
+	return newNodeFillView(gvr, "monitoring", usageBar)
 }
 
 // NewNodeTopology returns a node reservation view (per-pod requests).
 func NewNodeTopology(gvr *client.GVR) ResourceViewer {
-	return newNodeFillView(gvr, "Node Topology", reservationBar, true)
+	return newNodeFillView(gvr, "topology", reservationBar)
 }
 
 // Init initializes the view.
@@ -137,12 +136,15 @@ func (v *nodeFillView) Init(ctx context.Context) error {
 	v.app.Styles.AddListener(v)
 	v.StylesChanged(v.app.Styles)
 
+	v.app.Prompt().SetModel(v.cmdBuff)
+	v.cmdBuff.AddListener(v)
+
 	return nil
 }
 
 func (v *nodeFillView) bindKeys() {
 	v.actions.Merge(ui.NewKeyActionsFromMap(ui.KeyMap{
-		tcell.KeyEnter:  ui.NewKeyAction("Pods", v.enterCmd, true),
+		tcell.KeyEnter:  ui.NewSharedKeyAction("Pods", v.enterCmd, true),
 		tcell.KeyDown:   ui.NewKeyAction("Down", v.moveCmd(1), false),
 		tcell.KeyUp:     ui.NewKeyAction("Up", v.moveCmd(-1), false),
 		ui.KeyJ:         ui.NewKeyAction("Down", v.moveCmd(1), false),
@@ -150,8 +152,9 @@ func (v *nodeFillView) bindKeys() {
 		ui.KeyC:         ui.NewKeyAction("Sort CPU", v.sortCmd("cpu"), true),
 		ui.KeyM:         ui.NewKeyAction("Sort MEM", v.sortCmd("mem"), true),
 		ui.KeyN:         ui.NewKeyAction("Sort Name", v.sortCmd("name"), true),
-		ui.KeySlash:     ui.NewKeyAction("Filter", v.activateFilterCmd, false),
-		tcell.KeyEscape: ui.NewKeyAction("Clear", v.clearFilterCmd, false),
+		ui.KeySlash:     ui.NewSharedKeyAction("Filter Mode", v.activateCmd, false),
+		tcell.KeyEscape: ui.NewSharedKeyAction("Clear", v.resetCmd, false),
+		tcell.KeyDelete: ui.NewSharedKeyAction("Erase", v.eraseCmd, false),
 	}))
 }
 
@@ -324,13 +327,15 @@ func (v *nodeFillView) render() {
 		v.selected = 0
 	}
 
+	// Colors come from the active skin, like the rest of k9s.
+	tbl := v.app.Styles.Table()
+	fg := tbl.FgColor.String()         // row text (e.g. catppuccin lavender)
+	hdr := tbl.Header.FgColor.String() // header accent (e.g. catppuccin gold)
 	// k9s draws highlighted regions inverted (fg/bg swapped), so pre-swap the
-	// selected line with cursorBg/cursorFg to land on the standard cursor colors.
-	selFg := v.app.Styles.Table().CursorFgColor.String()
-	selBg := v.app.Styles.Table().CursorBgColor.String()
-	if v.lightSel {
-		selBg = lighten(v.app.Styles.Table().CursorBgColor.Color(), 0.5)
-	}
+	// selected line with cursorBg/cursorFg. Lighten the bg so the selection
+	// stays readable against the colored bars.
+	selFg := tbl.CursorFgColor.String()
+	selBg := lighten(tbl.CursorBgColor.Color(), 0.5)
 
 	var b strings.Builder
 	for i := range nodes {
@@ -340,9 +345,9 @@ func (v *nodeFillView) render() {
 		if i == v.selected {
 			fmt.Fprintf(&b, `["n%d"][%s:%s:b] ● %s (%s)[""][-:-:-]`+"\n", i, selBg, selFg, n.name, n.meta())
 		} else {
-			fmt.Fprintf(&b, `["n%d"] [green::]●[-:-:-] [white::b]%s[-:-:-] [gray::](%s)[""]`+"\n", i, n.name, n.meta())
+			fmt.Fprintf(&b, `["n%d"] [green::]●[-:-:-] [%s::b]%s[-:-:-] [%s::](%s)[""]`+"\n", i, fg, n.name, fg, n.meta())
 		}
-		fmt.Fprintf(&b, "     [::b]CPU[::-] %s    [::b]MEM[::-] %s\n", v.barFn(v, n, true), v.barFn(v, n, false))
+		fmt.Fprintf(&b, "     [%s::b]CPU[-:-:-] %s    [%s::b]MEM[-:-:-] %s\n", hdr, v.barFn(v, n, true), hdr, v.barFn(v, n, false))
 	}
 	fmt.Fprint(v, b.String())
 
@@ -377,7 +382,10 @@ func (v *nodeFillView) visibleNodes() []nodeTopo {
 	out := make([]nodeTopo, 0, len(v.nodes))
 	q := strings.ToLower(v.filter)
 	for _, n := range v.nodes {
-		if strings.Contains(strings.ToLower(n.name), q) {
+		// Match on node name, nodeclass or instance type (e.g. /spot, /m8g.2xlarge).
+		if strings.Contains(strings.ToLower(n.name), q) ||
+			strings.Contains(strings.ToLower(n.nodeClass), q) ||
+			strings.Contains(strings.ToLower(n.instanceType), q) {
 			out = append(out, n)
 		}
 	}
@@ -402,15 +410,19 @@ func (v *nodeFillView) applySort() {
 }
 
 func (v *nodeFillView) updateTitle() {
-	base := fmt.Sprintf(" %s [%d] ", v.title, len(v.visibleNodes()))
-	switch {
-	case v.filtering:
-		base = fmt.Sprintf(" %s </%s> ", v.title, v.filter)
-	case v.filter != "":
-		base = fmt.Sprintf(" %s [%d] </%s> ", v.title, len(v.visibleNodes()), v.filter)
-	}
 	frame := v.app.Styles.Frame()
-	v.SetTitle(ui.SkinTitle(base, &frame))
+	count := fmt.Sprintf("%d", len(v.visibleNodes()))
+	// Nodes are cluster-wide, so show the namespace as "all" in the highlight
+	// color, like the native nodes view (e.g. topology(all)[131]).
+	ns := v.app.Config.ActiveNamespace()
+	if client.IsClusterWide(ns) || ns == client.NotNamespaced || ns == "" {
+		ns = client.NamespaceAll
+	}
+	title := ui.SkinTitle(fmt.Sprintf(ui.NSTitleFmt, v.title, ns, count), &frame)
+	if v.filter != "" {
+		title += ui.SkinTitle(fmt.Sprintf(ui.SearchFmt, v.filter), &frame)
+	}
+	v.SetTitle(title)
 }
 
 // ----------------------------------------------------------------------------
@@ -536,38 +548,10 @@ func scaleCells(val, alloc int64) int {
 // Commands
 
 func (v *nodeFillView) keyboard(evt *tcell.EventKey) *tcell.EventKey {
-	if v.filtering {
-		return v.filterKey(evt)
-	}
-	key := evt.Key()
-	if key == tcell.KeyRune {
-		key = tcell.Key(evt.Rune())
-	}
-	if a, ok := v.actions.Get(key); ok {
+	if a, ok := v.actions.Get(ui.AsKey(evt)); ok {
 		return a.Action(evt)
 	}
 	return evt
-}
-
-func (v *nodeFillView) filterKey(evt *tcell.EventKey) *tcell.EventKey {
-	switch evt.Key() {
-	case tcell.KeyEscape:
-		v.filtering, v.filter = false, ""
-		v.render()
-	case tcell.KeyEnter:
-		v.filtering = false
-		v.render()
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if v.filter != "" {
-			v.filter = v.filter[:len(v.filter)-1]
-		}
-		v.render()
-	case tcell.KeyRune:
-		v.filter += string(evt.Rune())
-		v.selected = 0
-		v.render()
-	}
-	return nil
 }
 
 func (v *nodeFillView) moveCmd(delta int) func(*tcell.EventKey) *tcell.EventKey {
@@ -592,25 +576,52 @@ func (v *nodeFillView) sortCmd(key string) func(*tcell.EventKey) *tcell.EventKey
 	}
 }
 
-func (v *nodeFillView) activateFilterCmd(*tcell.EventKey) *tcell.EventKey {
-	v.filtering, v.filter = true, ""
-	v.render()
-	return nil
-}
-
-func (v *nodeFillView) clearFilterCmd(evt *tcell.EventKey) *tcell.EventKey {
-	if v.filter == "" && !v.filtering {
+// activateCmd opens the standard k9s filter prompt.
+func (v *nodeFillView) activateCmd(evt *tcell.EventKey) *tcell.EventKey {
+	if v.app.InCmdMode() {
 		return evt
 	}
-	v.filtering, v.filter = false, ""
+	v.app.ResetPrompt(v.cmdBuff)
+	return nil
+}
+
+func (v *nodeFillView) eraseCmd(*tcell.EventKey) *tcell.EventKey {
+	if !v.cmdBuff.IsActive() {
+		return nil
+	}
+	v.cmdBuff.Delete()
+	return nil
+}
+
+// resetCmd accepts/clears the filter, or leaves the view when not filtering.
+func (v *nodeFillView) resetCmd(evt *tcell.EventKey) *tcell.EventKey {
+	if !v.cmdBuff.InCmdMode() {
+		v.cmdBuff.Reset()
+		return v.app.PrevCmd(evt)
+	}
+	if v.cmdBuff.GetText() != "" {
+		v.filter = ""
+	}
+	v.cmdBuff.SetActive(false)
+	v.cmdBuff.Reset()
+	v.selected = 0
 	v.render()
 	return nil
 }
 
-func (v *nodeFillView) enterCmd(*tcell.EventKey) *tcell.EventKey {
+func (v *nodeFillView) enterCmd(evt *tcell.EventKey) *tcell.EventKey {
+	// When the filter prompt is up, Enter accepts the filter.
+	if v.cmdBuff.IsActive() {
+		v.filter = v.cmdBuff.GetText()
+		v.cmdBuff.SetActive(false)
+		v.selected = 0
+		v.render()
+		return nil
+	}
+
 	nodes := v.visibleNodes()
 	if v.selected < 0 || v.selected >= len(nodes) {
-		return nil
+		return evt
 	}
 	name := nodes[v.selected].name
 	v.Stop()
@@ -619,11 +630,29 @@ func (v *nodeFillView) enterCmd(*tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
+// BufferChanged live-filters as the user types in the prompt.
+func (v *nodeFillView) BufferChanged(text, _ string) {
+	v.filter = text
+	v.selected = 0
+	v.render()
+}
+
+// BufferCompleted applies the accepted filter text.
+func (v *nodeFillView) BufferCompleted(text, _ string) {
+	v.filter = text
+	v.render()
+}
+
+// BufferActive notifies the app the prompt activity changed.
+func (v *nodeFillView) BufferActive(state bool, k model.BufferKind) {
+	v.app.BufferActive(state, k)
+}
+
 // ----------------------------------------------------------------------------
 // Component plumbing
 
 // InCmdMode checks if prompt is active.
-func (v *nodeFillView) InCmdMode() bool { return v.filtering }
+func (v *nodeFillView) InCmdMode() bool { return v.cmdBuff.InCmdMode() }
 
 func (*nodeFillView) SetCommand(*cmd.Interpreter)            {}
 func (*nodeFillView) SetFilter(string, bool)                 {}
