@@ -16,6 +16,8 @@ This fork tracks upstream and adds a few extras on top:
 * **Node monitoring** view (`:monitoring`, `:mon`) — per-node CPU/MEM bars filled by live usage (metrics-server / allocatable), à la [lazy-for-kubernetes](https://github.com/ddymko/lfk).
 * **Node topology** view (`:topology`, `:topo`) — per-node CPU/MEM bars where each pod is a distinct colored block sized by its resource request, with free capacity shown as the empty tail. `/` filters by node name, nodeclass or instance type; `c`/`m`/`n` sort, `Enter` jumps to the node's pods.
 * **Resource bookmarks** (`Ctrl-B` to toggle, `:bookmarks`) — pin resources and reopen them from any view.
+* **Deployment sizing** view (`:sizing`, `:size`, `:sz`) — per-deployment CPU/MEM right-sizing recommendations from 24h Prometheus usage (auto-discovered via the API-server service proxy). Shows requests, 24h average usage, %, the recommended request and the wasted (reserved-but-unused) resource, with the waste columns colored green → yellow → orange → red. `Enter` opens the deployment; `Shift-O` (+ `Shift-←/→`) sorts the selected column; `/` filters.
+* **Datadog logs** (`Shift-D` on Deployments/Pods/StatefulSets/DaemonSets) — open the Datadog EU log explorer for every resource currently visible (after a `/` filter), scoped to the right Vector attributes and log index.
 * Performance and stability fixes for large clusters: lower idle CPU, metrics timeouts, and scale edge cases.
 
 This fork is not published to releases or package managers — [build it from source](#installation).
