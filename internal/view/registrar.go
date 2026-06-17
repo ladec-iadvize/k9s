@@ -99,6 +99,9 @@ func miscViewers(vv MetaViewers) {
 	vv[client.NmGVR] = MetaViewer{
 		viewerFn: NewNodeMonitoring,
 	}
+	vv[client.SzGVR] = MetaViewer{
+		viewerFn: NewDeploymentSizing,
+	}
 }
 
 func appsViewers(vv MetaViewers) {
