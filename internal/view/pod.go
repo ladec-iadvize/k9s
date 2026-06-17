@@ -129,8 +129,14 @@ func (p *Pod) bindKeys(aa *ui.KeyActions) {
 	}
 
 	aa.Bulk(ui.KeyMap{
-		ui.KeyO: ui.NewKeyAction("Show Node", p.showNode, true),
+		ui.KeyO:      ui.NewKeyAction("Show Node", p.showNode, true),
+		ui.KeyShiftD: ui.NewKeyAction("Datadog Logs", p.datadogLogsCmd, true),
 	})
+}
+
+func (p *Pod) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
+	openDatadogLogs(p.App(), p.GetTable(), "@container_name")
+	return nil
 }
 
 func (p *Pod) logOptions(prev bool) (*dao.LogOptions, error) {

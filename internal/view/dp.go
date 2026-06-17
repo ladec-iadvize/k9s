@@ -45,8 +45,14 @@ func NewDeploy(gvr *client.GVR) ResourceViewer {
 
 func (d *Deploy) bindKeys(aa *ui.KeyActions) {
 	aa.Bulk(ui.KeyMap{
-		ui.KeyZ: ui.NewKeyAction("ReplicaSets", d.replicaSetsCmd, true),
+		ui.KeyZ:      ui.NewKeyAction("ReplicaSets", d.replicaSetsCmd, true),
+		ui.KeyShiftD: ui.NewKeyAction("Datadog Logs", d.datadogLogsCmd, true),
 	})
+}
+
+func (d *Deploy) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
+	openDatadogLogs(d.App(), d.GetTable(), "@job")
+	return nil
 }
 
 func (d *Deploy) logOptions(prev bool) (*dao.LogOptions, error) {

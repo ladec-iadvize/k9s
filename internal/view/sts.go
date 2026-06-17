@@ -9,6 +9,7 @@ import (
 	"github.com/derailed/k9s/internal/client"
 	"github.com/derailed/k9s/internal/dao"
 	"github.com/derailed/k9s/internal/ui"
+	"github.com/derailed/tcell/v2"
 	appsv1 "k8s.io/api/apps/v1"
 )
 
@@ -33,9 +34,21 @@ func NewStatefulSet(gvr *client.GVR) ResourceViewer {
 			),
 		),
 	)
+	s.AddBindKeysFn(s.bindKeys)
 	s.GetTable().SetEnterFn(s.showPods)
 
 	return &s
+}
+
+func (s *StatefulSet) bindKeys(aa *ui.KeyActions) {
+	aa.Bulk(ui.KeyMap{
+		ui.KeyShiftD: ui.NewKeyAction("Datadog Logs", s.datadogLogsCmd, true),
+	})
+}
+
+func (s *StatefulSet) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
+	openDatadogLogs(s.App(), s.GetTable(), "@job")
+	return nil
 }
 
 func (s *StatefulSet) logOptions(prev bool) (*dao.LogOptions, error) {
