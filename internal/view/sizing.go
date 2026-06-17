@@ -23,6 +23,7 @@ import (
 	"github.com/derailed/k9s/internal/ui"
 	"github.com/derailed/tview"
 	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -50,6 +51,8 @@ const (
 func sizingHeader() model1.Header {
 	mx := model1.Attrs{Align: tview.AlignRight, MX: true}
 	cap := model1.Attrs{Align: tview.AlignRight, Capacity: true}
+	cpuReco := model1.Attrs{Align: tview.AlignRight, MX: true, Decorator: sizingRecoDecorator(true)}
+	memReco := model1.Attrs{Align: tview.AlignRight, Capacity: true, Decorator: sizingRecoDecorator(false)}
 	return model1.Header{
 		model1.HeaderColumn{Name: "NAMESPACE"},
 		model1.HeaderColumn{Name: "DEPLOYMENT"},
@@ -57,13 +60,57 @@ func sizingHeader() model1.Header {
 		model1.HeaderColumn{Name: "CPU/REQ", Attrs: mx},
 		model1.HeaderColumn{Name: "CPU/USE", Attrs: mx},
 		model1.HeaderColumn{Name: "CPU%", Attrs: mx},
-		model1.HeaderColumn{Name: "CPU→RECO", Attrs: mx},
+		model1.HeaderColumn{Name: "CPU→RECO", Attrs: cpuReco},
 		model1.HeaderColumn{Name: "CPU/WASTE", Attrs: mx},
 		model1.HeaderColumn{Name: "MEM/REQ", Attrs: cap},
 		model1.HeaderColumn{Name: "MEM/USE", Attrs: cap},
 		model1.HeaderColumn{Name: "MEM%", Attrs: mx},
-		model1.HeaderColumn{Name: "MEM→RECO", Attrs: cap},
+		model1.HeaderColumn{Name: "MEM→RECO", Attrs: memReco},
 		model1.HeaderColumn{Name: "MEM/WASTE", Attrs: cap},
+	}
+}
+
+// sizingRecoDecorator colors a recommendation cell: "ok" stays green; an actual
+// recommendation is graded yellow → orange → red by its magnitude (so the
+// bigger the request we still suggest, the hotter the color). Applied at render
+// time, after sorting, so the raw value still drives Shift+O.
+func sizingRecoDecorator(isCPU bool) model1.DecoratorFunc {
+	return func(s string) string {
+		switch s {
+		case "", "-":
+			return s
+		case "ok":
+			return "[green::b]ok[-:-:-]"
+		}
+		return fmt.Sprintf("[%s::b]%s[-:-:-]", sizingRecoColor(s, isCPU), s)
+	}
+}
+
+// sizingRecoColor grades a recommended quantity. CPU thresholds are in
+// millicores, MEM in bytes.
+func sizingRecoColor(s string, isCPU bool) string {
+	q, err := resource.ParseQuantity(s)
+	if err != nil {
+		return "yellow"
+	}
+	if isCPU {
+		switch m := q.MilliValue(); {
+		case m < 250:
+			return "yellow"
+		case m < 1000:
+			return "orange"
+		default:
+			return "red"
+		}
+	}
+	const mi = 1024 * 1024
+	switch b := q.Value(); {
+	case b < 512*mi:
+		return "yellow"
+	case b < 2048*mi:
+		return "orange"
+	default:
+		return "red"
 	}
 }
 
@@ -76,7 +123,7 @@ type sizingRow struct {
 	memReq, memUse  int64
 }
 
-func (r *sizingRow) hasData() bool { return r.pods > 0 && (r.cpuUse > 0 || r.memUse > 0) }
+func (r *sizingRow) hasData() bool { return r.cpuUse > 0 || r.memUse > 0 }
 
 func (r *sizingRow) cpuPerc() int { return client.ToPercentage(r.cpuUse, r.cpuReq) }
 func (r *sizingRow) memPerc() int { return client.ToPercentage(r.memUse, r.memReq) }
@@ -135,10 +182,10 @@ func trimZeroDec(f float64) string {
 // sizingFields renders a row in the column order of sizingHeader().
 func sizingFields(r *sizingRow) model1.Fields {
 	cpuReq, memReq := fmtCPU(r.cpuReq), fmtMem(r.memReq)
-	pods, cpuUse, cpuPct, cpuReco, cpuWaste := "-", "-", "-", "-", "-"
+	pods := strconv.Itoa(r.pods)
+	cpuUse, cpuPct, cpuReco, cpuWaste := "-", "-", "-", "-"
 	memUse, memPct, memReco, memWaste := "-", "-", "-", "-"
 	if r.hasData() {
-		pods = strconv.Itoa(r.pods)
 		cpuUse = fmtCPU(r.cpuUse)
 		cpuPct = fmt.Sprintf("%d%%", r.cpuPerc())
 		if rec, yes := reco(r.cpuUse, r.cpuReq); yes {
@@ -306,11 +353,17 @@ func (m *sizingModel) buildData(ctx context.Context) (*model1.TableData, error) 
 			slog.Warn("Sizing: unable to list pods", slogs.Error, err)
 		}
 		var sumCPU, sumMEM float64
+		var sampled int
 		for _, po := range podObjs {
 			pu, ok := po.(*unstructured.Unstructured)
 			if !ok {
 				continue
 			}
+			// Skip terminated pods; count only live ones.
+			if ph, _, _ := unstructured.NestedString(pu.Object, "status", "phase"); ph == "Succeeded" || ph == "Failed" {
+				continue
+			}
+			r.pods++
 			key := client.FQN(dp.Namespace, pu.GetName())
 			cu, okc := cpuUse[key]
 			mu, okm := memUse[key]
@@ -319,11 +372,11 @@ func (m *sizingModel) buildData(ctx context.Context) (*model1.TableData, error) 
 			}
 			sumCPU += cu * 1000 // cores -> millicores
 			sumMEM += mu
-			r.pods++
+			sampled++
 		}
-		if r.pods > 0 {
-			r.cpuUse = int64(sumCPU / float64(r.pods))
-			r.memUse = int64(sumMEM / float64(r.pods))
+		if sampled > 0 {
+			r.cpuUse = int64(sumCPU / float64(sampled))
+			r.memUse = int64(sumMEM / float64(sampled))
 		}
 
 		td.AddRow(model1.NewRowEvent(model1.EventAdd, model1.Row{
@@ -418,7 +471,7 @@ func (v *sizingView) Init(ctx context.Context) error {
 	v.model = newSizingModel(v.GVR(), v.App())
 	v.SetModel(v.model)
 	v.SetSortCol(sizingDefaultSortCol, false)
-	v.SetEnterFn(v.gotoPods)
+	v.SetEnterFn(v.gotoDeployment)
 
 	return nil
 }
@@ -448,24 +501,13 @@ func (v *sizingView) Stop() {
 	v.Table.Stop()
 }
 
-// gotoPods jumps to the selected deployment's pods.
-func (v *sizingView) gotoPods(app *App, _ ui.Tabular, _ *client.GVR, path string) {
-	o, err := app.factory.Get(client.DpGVR, path, true, labels.Everything())
-	if err != nil {
-		app.Flash().Err(err)
+// gotoDeployment opens the selected deployment in the standard deployments
+// view, giving access to describe/edit/scale/logs and the rest.
+func (v *sizingView) gotoDeployment(app *App, _ ui.Tabular, _ *client.GVR, path string) {
+	if path == "" {
 		return
 	}
-	u, ok := o.(*unstructured.Unstructured)
-	if !ok {
-		app.Flash().Err(errors.New("unexpected deployment object"))
-		return
-	}
-	var dp appsv1.Deployment
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &dp); err != nil {
-		app.Flash().Err(err)
-		return
-	}
-	showPodsFromSelector(app, path, dp.Spec.Selector)
+	app.gotoResource(client.DpGVR.String(), path, false, true)
 }
 
 // TableDataChanged renders fresh model data into the widget.
