@@ -9,6 +9,19 @@ for changes and offers subsequent commands to interact with your observed resour
 
 ---
 
+## About this fork (`ladec-iadvize/k9s`)
+
+This fork tracks upstream and adds a few extras on top:
+
+* **Node monitoring** view (`:monitoring`, `:mon`) — per-node CPU/MEM bars filled by live usage (metrics-server / allocatable), à la [lazy-for-kubernetes](https://github.com/ddymko/lfk).
+* **Node topology** view (`:topology`, `:topo`) — per-node CPU/MEM bars where each pod is a distinct colored block sized by its resource request, with free capacity shown as the empty tail. `/` filters by node name, nodeclass or instance type; `c`/`m`/`n` sort, `Enter` jumps to the node's pods.
+* **Resource bookmarks** (`Ctrl-B` to toggle, `:bookmarks`) — pin resources and reopen them from any view.
+* Performance and stability fixes for large clusters: lower idle CPU, metrics timeouts, and scale edge cases.
+
+This fork is not published to releases or package managers — [build it from source](#installation).
+
+---
+
 ## Note...
 
 K9s is not pimped out by a big corporation with deep pockets.
@@ -76,6 +89,22 @@ Wanna discuss K9s features with your fellow `K9sers` or simply show your support
 ---
 
 ## Installation
+
+> **This fork** has no published releases or package-manager builds — install it by building from source:
+>
+> ```shell
+> git clone https://github.com/ladec-iadvize/k9s.git
+> cd k9s
+> make build            # builds ./execs/k9s (needs Go, see go.mod)
+> ```
+>
+> Then run `./execs/k9s`, or put it on your `PATH`:
+>
+> ```shell
+> sudo install execs/k9s /usr/local/bin/k9s
+> ```
+>
+> The package-manager options below install **upstream** k9s, not this fork.
 
 K9s is available on Linux, macOS and Windows platforms.
 Binaries for Linux, Windows and Mac are available as tarballs in the [release page](https://github.com/derailed/k9s/releases).
