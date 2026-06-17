@@ -387,6 +387,12 @@ func (m *sizingModel) buildData(ctx context.Context) (*model1.TableData, error) 
 			r.memUse = int64(sumMEM / float64(sampled))
 		}
 
+		// Skip deployments with no measurable 24h usage (scaled to zero, no
+		// ready pod, or pods too recent to have metrics).
+		if !r.hasData() {
+			continue
+		}
+
 		td.AddRow(model1.NewRowEvent(model1.EventAdd, model1.Row{
 			ID:     client.FQN(dp.Namespace, dp.Name),
 			Fields: sizingFields(&r),
