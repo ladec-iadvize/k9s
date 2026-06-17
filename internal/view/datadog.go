@@ -19,13 +19,22 @@ const (
 	// datadogMaxValues guards against pathologically long URLs when no
 	// filter is active on a large cluster.
 	datadogMaxValues = 200
+	// datadogNamespaceAttr scopes the query to a single namespace.
+	// iAdvize ships logs through Vector, so cluster metadata lands as log
+	// attributes (@...), not as the standard Datadog kube_* tags.
+	datadogNamespaceAttr = "@namespace"
+	// datadogProdIndexes / datadogDevIndex select which Datadog log indexes
+	// to search depending on the active k8s context (prod vs dev).
+	datadogProdIndexes = "main,staging"
+	datadogDevIndex    = "dev"
 )
 
 // openDatadogLogs opens the Datadog log explorer for every resource currently
 // visible in the table (i.e. after any active "/" filter), grouping them under
-// the given Datadog tag (e.g. "kube_deployment", "pod_name"). When all visible
-// resources live in a single namespace, the query is scoped to it.
-func openDatadogLogs(app *App, t *Table, tag string) {
+// the given Datadog log attribute (e.g. "@job" for workloads, "@container_name"
+// for pods). When all visible resources share a namespace, the query is scoped
+// to it, and the log index is picked from the active context (prod vs dev).
+func openDatadogLogs(app *App, t *Table, attr string) {
 	if t == nil {
 		app.Flash().Err(errors.New("no table to read from"))
 		return
@@ -65,12 +74,14 @@ func openDatadogLogs(app *App, t *Table, tag string) {
 		return
 	}
 
-	query := tag + ":(" + strings.Join(names, " OR ") + ")"
+	query := attr + ":(" + strings.Join(names, " OR ") + ")"
 	// Scope to the namespace only when every visible resource shares one.
 	if singleNS != "" && !multiNS {
-		query += " kube_namespace:" + singleNS
+		query += " " + datadogNamespaceAttr + ":" + singleNS
 	}
-	site := "https://" + datadogSite + "/logs?query=" + url.QueryEscape(query)
+
+	site := "https://" + datadogSite + "/logs?query=" + url.QueryEscape(query) +
+		"&index=" + url.QueryEscape(datadogIndexes(app.Config.ActiveContextName()))
 
 	bin := browseLinux
 	if runtime.GOOS == "darwin" {
@@ -94,4 +105,13 @@ func openDatadogLogs(app *App, t *Table, tag string) {
 		return
 	}
 	app.Flash().Infof("Opening Datadog logs for %d resource(s)", len(names))
+}
+
+// datadogIndexes maps the active k8s context to the Datadog log index(es) to
+// search: prod contexts hit the main+staging indexes, everything else dev.
+func datadogIndexes(context string) string {
+	if strings.Contains(strings.ToLower(context), "prod") {
+		return datadogProdIndexes
+	}
+	return datadogDevIndex
 }

@@ -51,7 +51,7 @@ func (d *Deploy) bindKeys(aa *ui.KeyActions) {
 }
 
 func (d *Deploy) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
-	openDatadogLogs(d.App(), d.GetTable(), "kube_deployment")
+	openDatadogLogs(d.App(), d.GetTable(), "@job")
 	return nil
 }
 

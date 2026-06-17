@@ -45,7 +45,7 @@ func (d *DaemonSet) bindKeys(aa *ui.KeyActions) {
 }
 
 func (d *DaemonSet) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
-	openDatadogLogs(d.App(), d.GetTable(), "kube_daemon_set")
+	openDatadogLogs(d.App(), d.GetTable(), "@job")
 	return nil
 }
 

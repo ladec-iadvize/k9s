@@ -135,7 +135,7 @@ func (p *Pod) bindKeys(aa *ui.KeyActions) {
 }
 
 func (p *Pod) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
-	openDatadogLogs(p.App(), p.GetTable(), "pod_name")
+	openDatadogLogs(p.App(), p.GetTable(), "@container_name")
 	return nil
 }
 

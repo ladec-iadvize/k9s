@@ -47,7 +47,7 @@ func (s *StatefulSet) bindKeys(aa *ui.KeyActions) {
 }
 
 func (s *StatefulSet) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
-	openDatadogLogs(s.App(), s.GetTable(), "kube_stateful_set")
+	openDatadogLogs(s.App(), s.GetTable(), "@job")
 	return nil
 }
 
