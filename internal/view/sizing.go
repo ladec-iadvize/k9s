@@ -51,8 +51,8 @@ const (
 func sizingHeader() model1.Header {
 	mx := model1.Attrs{Align: tview.AlignRight, MX: true}
 	cap := model1.Attrs{Align: tview.AlignRight, Capacity: true}
-	cpuReco := model1.Attrs{Align: tview.AlignRight, MX: true, Decorator: sizingRecoDecorator(true)}
-	memReco := model1.Attrs{Align: tview.AlignRight, Capacity: true, Decorator: sizingRecoDecorator(false)}
+	cpuWaste := model1.Attrs{Align: tview.AlignRight, MX: true, Decorator: sizingWasteDecorator(true)}
+	memWaste := model1.Attrs{Align: tview.AlignRight, Capacity: true, Decorator: sizingWasteDecorator(false)}
 	return model1.Header{
 		model1.HeaderColumn{Name: "NAMESPACE"},
 		model1.HeaderColumn{Name: "DEPLOYMENT"},
@@ -60,54 +60,62 @@ func sizingHeader() model1.Header {
 		model1.HeaderColumn{Name: "CPU/REQ", Attrs: mx},
 		model1.HeaderColumn{Name: "CPU/USE", Attrs: mx},
 		model1.HeaderColumn{Name: "CPU%", Attrs: mx},
-		model1.HeaderColumn{Name: "CPU→RECO", Attrs: cpuReco},
-		model1.HeaderColumn{Name: "CPU/WASTE", Attrs: mx},
+		model1.HeaderColumn{Name: "CPU→RECO", Attrs: model1.Attrs{Align: tview.AlignRight, MX: true, Decorator: sizingOkDecorator}},
+		model1.HeaderColumn{Name: "CPU/WASTE", Attrs: cpuWaste},
 		model1.HeaderColumn{Name: "MEM/REQ", Attrs: cap},
 		model1.HeaderColumn{Name: "MEM/USE", Attrs: cap},
 		model1.HeaderColumn{Name: "MEM%", Attrs: mx},
-		model1.HeaderColumn{Name: "MEM→RECO", Attrs: memReco},
-		model1.HeaderColumn{Name: "MEM/WASTE", Attrs: cap},
+		model1.HeaderColumn{Name: "MEM→RECO", Attrs: model1.Attrs{Align: tview.AlignRight, Capacity: true, Decorator: sizingOkDecorator}},
+		model1.HeaderColumn{Name: "MEM/WASTE", Attrs: memWaste},
 	}
 }
 
-// sizingRecoDecorator colors a recommendation cell: "ok" stays green; an actual
-// recommendation is graded yellow → orange → red by its magnitude (so the
-// bigger the request we still suggest, the hotter the color). Applied at render
-// time, after sorting, so the raw value still drives Shift+O.
-func sizingRecoDecorator(isCPU bool) model1.DecoratorFunc {
+// sizingOkDecorator greens the "ok" marker (well-sized workloads) and leaves
+// actual recommendation values neutral.
+func sizingOkDecorator(s string) string {
+	if s == "ok" {
+		return "[green::b]ok[-:-:-]"
+	}
+	return s
+}
+
+// sizingWasteDecorator colors a waste cell by how much is wasted: nothing →
+// green, then yellow → orange → red as the wasted quantity grows. Applied at
+// render time, after sorting, so the raw value still drives Shift+O.
+func sizingWasteDecorator(isCPU bool) model1.DecoratorFunc {
 	return func(s string) string {
 		switch s {
 		case "", "-":
 			return s
-		case "ok":
-			return "[green::b]ok[-:-:-]"
+		case "0":
+			return "[green::b]0[-:-:-]"
 		}
-		return fmt.Sprintf("[%s::b]%s[-:-:-]", sizingRecoColor(s, isCPU), s)
+		return fmt.Sprintf("[%s::b]%s[-:-:-]", sizingWasteColor(s, isCPU), s)
 	}
 }
 
-// sizingRecoColor grades a recommended quantity. CPU thresholds are in
-// millicores, MEM in bytes.
-func sizingRecoColor(s string, isCPU bool) string {
+// sizingWasteColor grades a wasted quantity. CPU thresholds are in millicores,
+// MEM in bytes.
+func sizingWasteColor(s string, isCPU bool) string {
 	q, err := resource.ParseQuantity(s)
 	if err != nil {
 		return "yellow"
 	}
 	if isCPU {
 		switch m := q.MilliValue(); {
-		case m < 250:
+		case m < 500:
 			return "yellow"
-		case m < 1000:
+		case m < 2000:
 			return "orange"
 		default:
 			return "red"
 		}
 	}
-	const mi = 1024 * 1024
+	const gi = 1024 * 1024 * 1024
 	switch b := q.Value(); {
-	case b < 512*mi:
+	case b < gi:
 		return "yellow"
-	case b < 2048*mi:
+	case b < 4*gi:
 		return "orange"
 	default:
 		return "red"
