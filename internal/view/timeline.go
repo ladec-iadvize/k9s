@@ -72,10 +72,11 @@ type Timeline struct {
 	selector labels.Selector
 
 	axis     *tview.TextView
-	table    *tview.Table
+	list     *tview.TextView
 	detail   *tview.TextView
 	actions  *ui.KeyActions
 	objects  []tlObject
+	selIndex int
 	windowIx int
 	cancelFn context.CancelFunc
 }
@@ -89,7 +90,7 @@ func NewTimeline(app *App, gvr *client.GVR, path string, sel labels.Selector) *T
 		path:     path,
 		selector: sel,
 		axis:     tview.NewTextView(),
-		table:    tview.NewTable(),
+		list:     tview.NewTextView(),
 		detail:   tview.NewTextView(),
 		actions:  ui.NewKeyActions(),
 		windowIx: 2, // default 1h
@@ -102,26 +103,23 @@ func (t *Timeline) Init(_ context.Context) error {
 	t.SetBorderPadding(0, 0, 1, 1)
 	t.updateTitle()
 
-	t.axis.SetDynamicColors(true)
-	t.table.SetBorder(false)
-	t.table.SetSelectable(true, false)
-	t.table.SetFixed(1, 0)
-	t.table.SetSelectionChangedFunc(t.selectionChanged)
-	t.table.SetInputCapture(t.keyboard)
+	t.axis.SetDynamicColors(true).SetWrap(false)
+	t.list.SetDynamicColors(true).SetWrap(false).SetScrollable(true)
+	t.list.SetInputCapture(t.keyboard)
 
 	t.detail.SetDynamicColors(true).SetScrollable(true).SetWrap(true)
 	t.detail.SetBorder(true)
 	t.detail.SetTitle(" Events ")
 
 	t.AddItem(t.axis, 1, 0, false)
-	t.AddItem(t.table, 0, 3, true)
+	t.AddItem(t.list, 0, 3, true)
 	t.AddItem(t.detail, 0, 2, false)
 
 	t.app.Styles.AddListener(t)
 	t.StylesChanged(t.app.Styles)
 
 	t.load()
-	t.app.SetFocus(t.table)
+	t.app.SetFocus(t.list)
 
 	return nil
 }
@@ -136,6 +134,9 @@ func (t *Timeline) load() {
 		return
 	}
 	t.objects = objs
+	if t.selIndex >= len(objs) {
+		t.selIndex = 0
+	}
 	t.render()
 }
 
@@ -229,28 +230,41 @@ type appsRS struct {
 	birth     time.Time
 }
 
-// render rebuilds the axis, the band table and the detail of the current row.
+// nameWidth returns the display width of the widest (indented) object name.
+func (t *Timeline) nameWidth() int {
+	w := 0
+	for i := range t.objects {
+		if n := t.objects[i].indent*2 + len(t.objects[i].name); n > w {
+			w = n
+		}
+	}
+	return w
+}
+
+// render rebuilds the axis, the band list and the detail of the current row.
 func (t *Timeline) render() {
-	now := time.Now()
-	start := now.Add(-t.window())
-	t.axis.SetText(t.axisLine())
 	t.updateTitle()
+	nw := t.nameWidth()
+	t.axis.SetText(strings.Repeat(" ", nw+1) + "[gray::d]" + t.axisLine())
+	t.renderList(nw)
+	t.selectionChanged()
+}
 
-	t.table.Clear()
-	t.table.SetCell(0, 0, tview.NewTableCell("").SetSelectable(false))
-	t.table.SetCell(0, 1, tview.NewTableCell("[gray::d]"+t.axisLine()).SetSelectable(false))
-
+// renderList draws every object's band, highlighting the selected row.
+func (t *Timeline) renderList(nw int) {
+	start := time.Now().Add(-t.window())
+	var b strings.Builder
 	for i := range t.objects {
 		o := &t.objects[i]
 		name := strings.Repeat("  ", o.indent) + o.name
-		t.table.SetCell(i+1, 0, tview.NewTableCell(name).SetExpansion(0))
-		t.table.SetCell(i+1, 1, tview.NewTableCell(t.band(o, start)).SetExpansion(1))
+		name += strings.Repeat(" ", nw-len([]rune(name)))
+		if i == t.selIndex {
+			fmt.Fprintf(&b, "[black:aqua]%s[-:-:-] %s\n", name, t.band(o, start))
+		} else {
+			fmt.Fprintf(&b, "%s %s\n", name, t.band(o, start))
+		}
 	}
-
-	if t.table.GetRowCount() > 1 {
-		t.table.Select(1, 0)
-		t.selectionChanged(1, 0)
-	}
+	t.list.SetText(b.String())
 }
 
 // band builds the colored state band of an object over the look-back window.
@@ -263,7 +277,6 @@ func (t *Timeline) band(o *tlObject, start time.Time) string {
 
 	sev := make([]int, tlCols)
 	mark := make([]int, tlCols) // event glyph severity per bucket, 0 = none
-	cur := sevNormal
 	for i := range sev {
 		if i < birthIdx {
 			sev[i] = sevNone
@@ -279,14 +292,14 @@ func (t *Timeline) band(o *tlObject, start time.Time) string {
 		if idx < 0 || idx >= tlCols {
 			continue
 		}
-		cur = classifyEvent(e)
+		cur := classifyEvent(e)
 		for j := idx; j < tlCols; j++ { // carry forward; later events override the tail
 			if j >= birthIdx {
 				sev[j] = cur
 			}
 		}
-		if s := classifyEvent(e); s > mark[idx] {
-			mark[idx] = s
+		if cur > mark[idx] {
+			mark[idx] = cur
 		}
 	}
 	// "Now" reflects the live status, regardless of carried-forward severity.
@@ -331,11 +344,11 @@ func (t *Timeline) axisLine() string {
 }
 
 // selectionChanged refreshes the detail pane for the selected row.
-func (t *Timeline) selectionChanged(row, _ int) {
-	if row < 1 || row-1 >= len(t.objects) {
+func (t *Timeline) selectionChanged() {
+	if t.selIndex < 0 || t.selIndex >= len(t.objects) {
 		return
 	}
-	o := &t.objects[row-1]
+	o := &t.objects[t.selIndex]
 	t.detail.SetTitle(fmt.Sprintf(" Events · %s/%s ", strings.ToLower(o.kind), o.name))
 
 	if len(o.events) == 0 {
@@ -363,18 +376,47 @@ func (t *Timeline) selectionChanged(row, _ int) {
 	t.detail.ScrollToBeginning()
 }
 
+// move shifts the selection cursor and keeps it visible.
+func (t *Timeline) move(delta int) {
+	if len(t.objects) == 0 {
+		return
+	}
+	t.selIndex += delta
+	if t.selIndex < 0 {
+		t.selIndex = 0
+	}
+	if t.selIndex >= len(t.objects) {
+		t.selIndex = len(t.objects) - 1
+	}
+	t.renderList(t.nameWidth())
+	t.list.ScrollTo(max(0, t.selIndex-1), 0)
+	t.selectionChanged()
+}
+
 func (t *Timeline) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 	switch evt.Key() {
 	case tcell.KeyEscape:
 		return t.app.PrevCmd(evt)
+	case tcell.KeyUp:
+		t.move(-1)
+		return nil
+	case tcell.KeyDown:
+		t.move(1)
+		return nil
 	case tcell.KeyRune:
 		switch evt.Rune() {
+		case 'k':
+			t.move(-1)
+			return nil
+		case 'j':
+			t.move(1)
+			return nil
 		case 'q':
 			return t.app.PrevCmd(evt)
 		case 'r':
 			t.load()
 			return nil
-		case '+':
+		case '+', '=':
 			if t.windowIx < len(tlWindows)-1 {
 				t.windowIx++
 				t.render()
@@ -401,7 +443,9 @@ func (t *Timeline) updateTitle() {
 // StylesChanged notifies the skin changed.
 func (t *Timeline) StylesChanged(s *config.Styles) {
 	t.SetBackgroundColor(s.BgColor())
-	t.table.SetBackgroundColor(s.BgColor())
+	t.axis.SetBackgroundColor(s.BgColor())
+	t.list.SetBackgroundColor(s.BgColor())
+	t.list.SetTextColor(s.FgColor())
 	t.detail.SetBackgroundColor(s.BgColor())
 	t.detail.SetTextColor(s.FgColor())
 	t.updateTitle()
@@ -444,6 +488,7 @@ func (t *Timeline) App() *App { return t.app }
 // Hints returns the view hints.
 func (t *Timeline) Hints() model.MenuHints {
 	return model.MenuHints{
+		{Mnemonic: "j/k", Description: "Up/Down", Visible: true},
 		{Mnemonic: "r", Description: "Refresh", Visible: true},
 		{Mnemonic: "+", Description: "Wider window", Visible: true},
 		{Mnemonic: "-", Description: "Shorter window", Visible: true},
