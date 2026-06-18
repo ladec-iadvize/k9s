@@ -195,22 +195,15 @@ func (t *Timeline) fetch() ([]tlObject, error) {
 	}
 	sort.Slice(rss, func(i, j int) bool { return rss[i].birth.After(rss[j].birth) })
 
+	start := time.Now().Add(-t.window())
 	for _, rs := range rss {
-		objs = append(objs, tlObject{
-			kind:   "ReplicaSet",
-			name:   rs.name,
-			indent: 1,
-			uid:    rs.uid,
-			birth:  rs.birth,
-			live:   sevNormal,
-			events: byUID[rs.uid],
-		})
+		podRows := make([]tlObject, 0)
 		for i := range pods.Items {
 			p := &pods.Items[i]
 			if !ownedBy(p.OwnerReferences, rs.uid) {
 				continue
 			}
-			objs = append(objs, tlObject{
+			podRows = append(podRows, tlObject{
 				kind:   "Pod",
 				name:   p.Name,
 				indent: 2,
@@ -220,6 +213,20 @@ func (t *Timeline) fetch() ([]tlObject, error) {
 				events: byUID[string(p.UID)],
 			})
 		}
+		// Skip idle leftover ReplicaSets: no pods and no recent activity.
+		if len(podRows) == 0 && !hasEventInWindow(byUID[rs.uid], start) {
+			continue
+		}
+		objs = append(objs, tlObject{
+			kind:   "ReplicaSet",
+			name:   rs.name,
+			indent: 1,
+			uid:    rs.uid,
+			birth:  rs.birth,
+			live:   sevNormal,
+			events: byUID[rs.uid],
+		})
+		objs = append(objs, podRows...)
 	}
 
 	return objs, nil
@@ -423,13 +430,13 @@ func (t *Timeline) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 		case '+', '=':
 			if t.windowIx < len(tlWindows)-1 {
 				t.windowIx++
-				t.render()
+				t.load()
 			}
 			return nil
 		case '-':
 			if t.windowIx > 0 {
 				t.windowIx--
-				t.render()
+				t.load()
 			}
 			return nil
 		}
@@ -536,15 +543,27 @@ func eventTime(e *v1.Event) time.Time {
 }
 
 func classifyEvent(e *v1.Event) int {
-	if e.Type != v1.EventTypeWarning {
-		return sevNormal
-	}
-	switch {
-	case containsAny(e.Reason, "BackOff", "Failed", "OOM", "Unhealthy", "Evicted", "Kill", "Error", "CrashLoop"):
+	// Some unhealthy events are emitted as Normal by the kubelet (notably
+	// Killing after a failed probe), so judge by reason/message too, not just
+	// the event Type.
+	if containsAny(e.Reason, "BackOff", "Failed", "OOM", "CrashLoop", "Evicted", "Error") ||
+		containsAny(e.Message, "liveness probe", "readiness probe", "startup probe", "will be restarted") {
 		return sevError
-	default:
+	}
+	if e.Type == v1.EventTypeWarning || containsAny(e.Reason, "Unhealthy", "Preempt", "NodeNotReady") {
 		return sevWarning
 	}
+	return sevNormal
+}
+
+// hasEventInWindow reports whether any event falls within the look-back window.
+func hasEventInWindow(evs []*v1.Event, start time.Time) bool {
+	for _, e := range evs {
+		if !eventTime(e).Before(start) {
+			return true
+		}
+	}
+	return false
 }
 
 func podLiveSeverity(p *v1.Pod) int {
