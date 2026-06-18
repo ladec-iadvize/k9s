@@ -75,7 +75,7 @@ func (t *Table) SetCommand(i *cmd.Interpreter) {
 
 // HeaderIndex returns index of a given column or false if not found.
 func (t *Table) HeaderIndex(colName string) (int, bool) {
-	for i := 0; i < t.GetColumnCount(); i++ {
+	for i := range t.GetColumnCount() {
 		h := t.GetCell(0, i)
 		if h == nil {
 			continue
