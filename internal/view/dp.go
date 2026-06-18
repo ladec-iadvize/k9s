@@ -47,7 +47,28 @@ func (d *Deploy) bindKeys(aa *ui.KeyActions) {
 	aa.Bulk(ui.KeyMap{
 		ui.KeyZ:      ui.NewKeyAction("ReplicaSets", d.replicaSetsCmd, true),
 		ui.KeyShiftD: ui.NewKeyAction("Datadog Logs", d.datadogLogsCmd, true),
+		ui.KeyShiftT: ui.NewKeyAction("Timeline", d.timelineCmd, true),
 	})
+}
+
+func (d *Deploy) timelineCmd(evt *tcell.EventKey) *tcell.EventKey {
+	path := d.GetTable().GetSelectedItem()
+	if path == "" {
+		return evt
+	}
+	dp, err := d.getInstance(path)
+	if err != nil {
+		d.App().Flash().Err(err)
+		return nil
+	}
+	sel, err := metav1.LabelSelectorAsSelector(dp.Spec.Selector)
+	if err != nil {
+		d.App().Flash().Err(err)
+		return nil
+	}
+	openTimeline(d.App(), d.GVR(), path, sel)
+
+	return nil
 }
 
 func (d *Deploy) datadogLogsCmd(*tcell.EventKey) *tcell.EventKey {
