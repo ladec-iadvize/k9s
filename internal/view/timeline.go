@@ -259,7 +259,7 @@ func (t *Timeline) renderList(nw int) {
 		name := strings.Repeat("  ", o.indent) + o.name
 		name += strings.Repeat(" ", nw-len([]rune(name)))
 		if i == t.selIndex {
-			fmt.Fprintf(&b, "[black:aqua]%s[-:-:-] %s\n", name, t.band(o, start))
+			fmt.Fprintf(&b, "[black:aqua:b]%s[-:-:-] %s\n", name, t.band(o, start))
 		} else {
 			fmt.Fprintf(&b, "%s %s\n", name, t.band(o, start))
 		}
@@ -315,7 +315,7 @@ func (t *Timeline) band(o *tlObject, start time.Time) string {
 		case mark[i] != sevNone:
 			fmt.Fprintf(&b, "[%s::b]◆", sevColor(mark[i]))
 		default:
-			fmt.Fprintf(&b, "[%s]█", sevColor(sev[i]))
+			fmt.Fprintf(&b, "[%s::-]█", sevColor(sev[i]))
 		}
 	}
 
@@ -369,7 +369,7 @@ func (t *Timeline) selectionChanged() {
 			count = fmt.Sprintf("  [gray::d](x%d)", e.Count)
 		}
 		col := sevColor(classifyEvent(e))
-		fmt.Fprintf(&b, "[gray::d]%5s  [%s::b]%-8s[-:-:-]  [%s]%-22s[-:-:-]  %s%s\n",
+		fmt.Fprintf(&b, "[gray::d]%5s  [%s::b]%-8s[-:-:-]  [%s::b]%-22s[-:-:-]  %s%s\n",
 			age, col, e.Type, col, e.Reason, e.Message, count)
 	}
 	t.detail.SetText(b.String())
