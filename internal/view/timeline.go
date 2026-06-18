@@ -313,7 +313,9 @@ func (t *Timeline) band(o *tlObject, start time.Time) string {
 		case i < birthIdx:
 			b.WriteString("[gray::d]·")
 		case mark[i] != sevNone:
-			fmt.Fprintf(&b, "[%s::b]◆", sevColor(mark[i]))
+			// A colored dot on a dark cell so the event marker pops out of the
+			// band whatever the band's own color is.
+			fmt.Fprintf(&b, "[%s:black:b]●", sevColor(mark[i]))
 		default:
 			fmt.Fprintf(&b, "[%s::-]█", sevColor(sev[i]))
 		}
