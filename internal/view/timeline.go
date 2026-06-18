@@ -311,13 +311,15 @@ func (t *Timeline) band(o *tlObject, start time.Time) string {
 	for i := range tlCols {
 		switch {
 		case i < birthIdx:
-			b.WriteString("[gray::d]·")
+			b.WriteString(" ") // object does not exist yet
 		case mark[i] != sevNone:
-			// A colored dot on a dark cell so the event marker pops out of the
-			// band whatever the band's own color is.
-			fmt.Fprintf(&b, "[%s:black:b]●", sevColor(mark[i]))
+			// A big dot marks a bucket where an event occurred, colored by its
+			// severity so it pops out of the thin state track.
+			fmt.Fprintf(&b, "[%s::b]●", sevColor(mark[i]))
 		default:
-			fmt.Fprintf(&b, "[%s::-]█", sevColor(sev[i]))
+			// A thin colored track of small dots conveys the carried-forward
+			// state without the heavy solid band.
+			fmt.Fprintf(&b, "[%s::-]·", sevColor(sev[i]))
 		}
 	}
 
