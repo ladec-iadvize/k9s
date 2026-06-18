@@ -268,7 +268,9 @@ func (t *Timeline) renderList(nw int) {
 		if i == t.selIndex {
 			fmt.Fprintf(&b, "[black:aqua:b]%s[-:-:-] %s\n", name, t.band(o, start))
 		} else {
-			fmt.Fprintf(&b, "%s %s\n", name, t.band(o, start))
+			// Reset first: tview dynamic colors carry across newlines, so without
+			// this the trailing color of the previous band bleeds into the name.
+			fmt.Fprintf(&b, "[-:-:-]%s %s\n", name, t.band(o, start))
 		}
 	}
 	t.list.SetText(b.String())
@@ -427,13 +429,13 @@ func (t *Timeline) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 		case 'r':
 			t.load()
 			return nil
-		case '+', '=':
+		case '>', '+', '=':
 			if t.windowIx < len(tlWindows)-1 {
 				t.windowIx++
 				t.load()
 			}
 			return nil
-		case '-':
+		case '<':
 			if t.windowIx > 0 {
 				t.windowIx--
 				t.load()
@@ -501,8 +503,8 @@ func (t *Timeline) Hints() model.MenuHints {
 	return model.MenuHints{
 		{Mnemonic: "j/k", Description: "Up/Down", Visible: true},
 		{Mnemonic: "r", Description: "Refresh", Visible: true},
-		{Mnemonic: "+", Description: "Wider window", Visible: true},
-		{Mnemonic: "-", Description: "Shorter window", Visible: true},
+		{Mnemonic: ">", Description: "Wider window", Visible: true},
+		{Mnemonic: "<", Description: "Shorter window", Visible: true},
 		{Mnemonic: "Esc", Description: "Back", Visible: true},
 	}
 }
