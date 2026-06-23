@@ -26,7 +26,9 @@ import (
 
 const (
 	timelineTitle = "Timeline"
-	tlCols        = 60 // number of buckets drawn in a frieze band
+	tlDefaultCols = 60  // band width before the first layout is known
+	tlMinCols     = 20  // don't shrink the band below this
+	tlMaxCols     = 500 // sanity cap on very wide terminals
 	tlRefreshDur  = 30 * time.Second
 )
 
@@ -78,6 +80,7 @@ type Timeline struct {
 	objects  []tlObject
 	selIndex int
 	windowIx int
+	cols     int // band width in buckets, derived from the pane width
 	cancelFn context.CancelFunc
 }
 
@@ -94,6 +97,7 @@ func NewTimeline(app *App, gvr *client.GVR, path string, sel labels.Selector) *T
 		detail:   tview.NewTextView(),
 		actions:  ui.NewKeyActions(),
 		windowIx: 2, // default 1h
+		cols:     tlDefaultCols,
 	}
 }
 
@@ -251,10 +255,29 @@ func (t *Timeline) nameWidth() int {
 // render rebuilds the axis, the band list and the detail of the current row.
 func (t *Timeline) render() {
 	t.updateTitle()
+	t.paint()
+	t.selectionChanged()
+}
+
+// paint rebuilds the width-dependent content (axis + bands) at the current
+// band width.
+func (t *Timeline) paint() {
 	nw := t.nameWidth()
 	t.axis.SetText(strings.Repeat(" ", nw+1) + "[gray::d]" + t.axisLine())
 	t.renderList(nw)
-	t.selectionChanged()
+}
+
+// Draw recomputes the band width from the available pane width before drawing,
+// so the timeline fills the screen and reflows on resize.
+func (t *Timeline) Draw(screen tcell.Screen) {
+	if _, _, w, _ := t.GetInnerRect(); w > 0 {
+		c := min(w-t.nameWidth()-1, tlMaxCols)
+		if c >= tlMinCols && c != t.cols {
+			t.cols = c
+			t.paint()
+		}
+	}
+	t.Flex.Draw(screen)
 }
 
 // renderList draws every object's band, highlighting the selected row.
@@ -278,14 +301,15 @@ func (t *Timeline) renderList(nw int) {
 
 // band builds the colored state band of an object over the look-back window.
 func (t *Timeline) band(o *tlObject, start time.Time) string {
-	bucket := t.window() / tlCols
+	n := t.cols
+	bucket := t.window() / time.Duration(n)
 	if bucket <= 0 {
 		bucket = time.Second
 	}
 	birthIdx := int(o.birth.Sub(start) / bucket)
 
-	sev := make([]int, tlCols)
-	mark := make([]int, tlCols) // event glyph severity per bucket, 0 = none
+	sev := make([]int, n)
+	mark := make([]int, n) // event glyph severity per bucket, 0 = none
 	for i := range sev {
 		if i < birthIdx {
 			sev[i] = sevNone
@@ -298,11 +322,11 @@ func (t *Timeline) band(o *tlObject, start time.Time) string {
 	sort.Slice(sorted, func(i, j int) bool { return eventTime(sorted[i]).Before(eventTime(sorted[j])) })
 	for _, e := range sorted {
 		idx := int(eventTime(e).Sub(start) / bucket)
-		if idx < 0 || idx >= tlCols {
+		if idx < 0 || idx >= n {
 			continue
 		}
 		cur := classifyEvent(e)
-		for j := idx; j < tlCols; j++ { // carry forward; later events override the tail
+		for j := idx; j < n; j++ { // carry forward; later events override the tail
 			if j >= birthIdx {
 				sev[j] = cur
 			}
@@ -313,11 +337,11 @@ func (t *Timeline) band(o *tlObject, start time.Time) string {
 	}
 	// "Now" reflects the live status, regardless of carried-forward severity.
 	if o.live != sevNone {
-		sev[tlCols-1] = o.live
+		sev[n-1] = o.live
 	}
 
 	var b strings.Builder
-	for i := range tlCols {
+	for i := range n {
 		switch {
 		case i < birthIdx:
 			b.WriteString(" ") // object does not exist yet
@@ -341,7 +365,7 @@ func (t *Timeline) axisLine() string {
 	mid := "-" + humanizeDur(w/2)
 	right := "now"
 
-	line := []rune(strings.Repeat("─", tlCols))
+	line := []rune(strings.Repeat("─", t.cols))
 	put := func(pos int, s string) {
 		for i, r := range []rune(s) {
 			if pos+i >= 0 && pos+i < len(line) {
@@ -350,8 +374,8 @@ func (t *Timeline) axisLine() string {
 		}
 	}
 	put(0, left)
-	put(tlCols/2-len([]rune(mid))/2, mid)
-	put(tlCols-len([]rune(right)), right)
+	put(t.cols/2-len([]rune(mid))/2, mid)
+	put(t.cols-len([]rune(right)), right)
 
 	return string(line)
 }
