@@ -29,6 +29,7 @@ const (
 	tlDefaultCols = 60  // band width before the first layout is known
 	tlMinCols     = 20  // don't shrink the band below this
 	tlMaxCols     = 500 // sanity cap on very wide terminals
+	tlWidthPct    = 40  // band uses this % of the available pane width
 	tlRefreshDur  = 30 * time.Second
 )
 
@@ -271,7 +272,7 @@ func (t *Timeline) paint() {
 // so the timeline fills the screen and reflows on resize.
 func (t *Timeline) Draw(screen tcell.Screen) {
 	if _, _, w, _ := t.GetInnerRect(); w > 0 {
-		c := min(w-t.nameWidth()-1, tlMaxCols)
+		c := min((w-t.nameWidth()-1)*tlWidthPct/100, tlMaxCols)
 		if c >= tlMinCols && c != t.cols {
 			t.cols = c
 			t.paint()
