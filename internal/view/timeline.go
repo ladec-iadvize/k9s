@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	timelineTitle = "Timeline"
+	timelineTitle = "timeline"
 	tlDefaultCols = 60  // band width before the first layout is known
 	tlMinCols     = 20  // don't shrink the band below this
 	tlMaxCols     = 500 // sanity cap on very wide terminals
@@ -431,10 +431,26 @@ func (t *Timeline) move(delta int) {
 	t.selectionChanged()
 }
 
+// gotoSelection jumps to the selected pod in the standard pods view.
+func (t *Timeline) gotoSelection() {
+	if t.selIndex < 0 || t.selIndex >= len(t.objects) {
+		return
+	}
+	o := &t.objects[t.selIndex]
+	if o.kind != "Pod" {
+		return
+	}
+	ns, _ := client.Namespaced(t.path)
+	t.app.gotoResource(client.PodGVR.String(), client.FQN(ns, o.name), false, true)
+}
+
 func (t *Timeline) keyboard(evt *tcell.EventKey) *tcell.EventKey {
 	switch evt.Key() {
 	case tcell.KeyEscape:
 		return t.app.PrevCmd(evt)
+	case tcell.KeyEnter:
+		t.gotoSelection()
+		return nil
 	case tcell.KeyUp:
 		t.move(-1)
 		return nil
@@ -527,6 +543,7 @@ func (t *Timeline) App() *App { return t.app }
 func (t *Timeline) Hints() model.MenuHints {
 	return model.MenuHints{
 		{Mnemonic: "j/k", Description: "Up/Down", Visible: true},
+		{Mnemonic: "Enter", Description: "Goto pod", Visible: true},
 		{Mnemonic: "r", Description: "Refresh", Visible: true},
 		{Mnemonic: ">", Description: "Wider window", Visible: true},
 		{Mnemonic: "<", Description: "Shorter window", Visible: true},
