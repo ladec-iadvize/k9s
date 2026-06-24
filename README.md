@@ -18,6 +18,7 @@ This fork tracks upstream and adds a few extras on top:
 * **Resource bookmarks** (`Ctrl-B` to toggle, `:bookmarks`) — pin resources and reopen them from any view.
 * **Deployment sizing** view (`:sizing`, `:size`, `:sz`) — per-deployment CPU/MEM right-sizing recommendations from 24h Prometheus usage (auto-discovered via the API-server service proxy). Shows requests, 24h average usage, %, the recommended request and the wasted (reserved-but-unused) resource, with the waste columns colored green → yellow → orange → red. `Enter` opens the deployment; `Shift-O` (+ `Shift-←/→`) sorts the selected column; `/` filters.
 * **Datadog logs** (`Shift-D` on Deployments/Pods/StatefulSets/DaemonSets) — open the Datadog EU log explorer for every resource currently visible (after a `/` filter), scoped to the right Vector attributes and log index.
+* **Events timeline** (`Shift-T` on a Deployment) — a visual, read-only view of the pod lifecycle: one continuous color-coded state band per ReplicaSet/Pod (green/orange/red, carried forward from events), with `◆` markers on the buckets where events occurred. Select a row to see its events chronologically in the detail pane. `>`/`<` widen/shorten the look-back window (15m→24h), `r` refreshes, `Esc` goes back. On-demand fetch with a gentle refresh — no streaming, keeps k9s light.
 * **AZERTY-friendly**: `Ctrl-T` also clears marks (upstream only binds `Ctrl-\`, which is awkward to reach on AZERTY layouts).
 * Performance and stability fixes for large clusters: lower idle CPU, metrics timeouts, and scale edge cases.
 
